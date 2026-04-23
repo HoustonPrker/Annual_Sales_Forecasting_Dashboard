@@ -1,0 +1,5 @@
+.claude/
+.env
+__pycache__/
+tabs/__pycache__/
+*.pyc
