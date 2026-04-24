@@ -1,10 +1,10 @@
 from datetime import date
 
 import streamlit as st
-import streamlit.components.v1 as components
 
-from charts import revenue_chart, shap_impact_chart
+from charts import FEATURE_LABELS, revenue_chart, shap_impact_chart
 from model import month_fraction, predict_12_months, safe_log
+from saved_forecasts import save_forecast, single_forecast_excel_bytes
 
 _HELP = {
     "beds":      "Total staffed beds from AHD or CMS data.",
@@ -27,6 +27,12 @@ def render(artifacts: tuple) -> None:
 
     # ── Input form ────────────────────────────────────────────────────────────
     with st.form("forecast_inputs"):
+        hospital_name = st.text_input(
+            "Hospital Name",
+            placeholder="e.g. St. Mary's Medical Center",
+            help="Used to label saved and exported forecasts.",
+        )
+
         _section("Hospital Information")
         c1, c2 = st.columns(2, gap="large")
         with c1:
@@ -64,31 +70,66 @@ def render(artifacts: tuple) -> None:
             st.caption(_HELP["cafeteria"])
 
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
-        submitted = st.form_submit_button("Generate Forecast", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Generate Forecast", type="primary", width='stretch')
 
-    if not submitted:
+    if submitted:
+        inputs = dict(
+            staffed_beds=staffed_beds, fte=fte, adc=adc,
+            giftshop_sqft=giftshop_sqft, affiliation=affiliation,
+            dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
+            opening_date=str(opening_date),
+        )
+        with st.spinner("Calculating forecast…"):
+            try:
+                result = predict_12_months(artifacts, dict(
+                    staffed_beds=staffed_beds, fte=fte, adc=adc,
+                    giftshop_sqft=giftshop_sqft, affiliation=affiliation,
+                    dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
+                    opening_date=opening_date,
+                ))
+            except Exception as e:
+                st.error("Forecast could not be generated. Please check your inputs and try again.")
+                with st.expander("Error details"):
+                    st.exception(e)
+                return
+
+        shap_drivers = {
+            FEATURE_LABELS.get(f, f): float(v)
+            for f, v in zip(cfg["final_features"], result["shap_values"])
+        }
+        st.session_state["last_forecast"] = {
+            "hospital_name": hospital_name,
+            "inputs":        inputs,
+            "result":        result,
+            "adc":           adc,
+            "staffed_beds":  staffed_beds,
+            "giftshop_sqft": giftshop_sqft,
+            "opening_date":  opening_date,
+            "shap_drivers":  shap_drivers,
+            "shap_base":     float(cfg["shap_base_value"]),
+        }
+        st.session_state.pop("forecast_saved", None)
+
+    if "last_forecast" not in st.session_state:
         return
 
-    with st.spinner("Calculating forecast…"):
-        try:
-            result = predict_12_months(artifacts, dict(
-                staffed_beds=staffed_beds, fte=fte, adc=adc,
-                giftshop_sqft=giftshop_sqft, affiliation=affiliation,
-                dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
-                opening_date=opening_date,
-            ))
-        except Exception as e:
-            st.error("Forecast could not be generated. Please check your inputs and try again.")
-            with st.expander("Error details"):
-                st.exception(e)
-            return
+    fc = st.session_state["last_forecast"]
+    result       = fc["result"]
+    inputs       = fc["inputs"]
+    hospital_name = fc["hospital_name"]
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     _render_hero(result)
     _render_monthly_chart(result, cfg["confidence_intervals"])
     _render_impact(result, cfg)
-    _render_comparable_stores(summary_df, adc, staffed_beds)
-    _render_technical_details(staffed_beds, fte, adc, giftshop_sqft, opening_date, result)
+    _render_comparable_stores(summary_df, fc["adc"], fc["staffed_beds"])
+    _render_technical_details(
+        fc["inputs"]["staffed_beds"], fc["inputs"]["fte"],
+        fc["inputs"]["adc"], fc["inputs"]["giftshop_sqft"],
+        fc["opening_date"], result,
+    )
+    _render_actions(hospital_name, inputs, result,
+                    fc.get("shap_drivers", {}), fc.get("shap_base", 0.0))
 
 
 # ── Section helpers ───────────────────────────────────────────────────────────
@@ -158,8 +199,7 @@ def _render_hero(result: dict) -> None:
         unsafe_allow_html=True,
     )
 
-    # components.html renders in a real iframe — guaranteed HTML rendering
-    components.html(_card_html(lo, mid, hi), height=148, scrolling=False)
+    st.html(_card_html(lo, mid, hi))
 
     # Summary sentence — dollar signs in HTML to avoid LaTeX interpretation
     st.markdown(
@@ -186,7 +226,7 @@ def _render_monthly_chart(result: dict, ci: dict) -> None:
     trimmed_dates = [d for r, d in zip(rev, dates) if r >= cutoff]
 
     fig = revenue_chart(trimmed_rev, trimmed_dates, ci)
-    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     _divider()
 
 
@@ -205,7 +245,7 @@ def _render_impact(result: dict, cfg: dict) -> None:
         result["shap_values"],
         cfg["shap_base_value"],
     )
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width='stretch')
     _divider()
 
 
@@ -284,6 +324,65 @@ def _render_technical_details(beds, fte, adc, sqft, opening_date, result):
             st.info(
                 f"Opening on day {opening_date.day} — Month 1 revenue prorated to {frac:.1%} of a full month."
             )
+
+
+def _render_actions(
+    hospital_name: str, inputs: dict, result: dict,
+    shap_drivers: dict, shap_base: float,
+) -> None:
+    label = hospital_name.strip() or "Unnamed Hospital"
+    _divider()
+    st.markdown(
+        "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:10px;'>"
+        "Save or Export This Forecast</p>",
+        unsafe_allow_html=True,
+    )
+
+    col_save, col_dl, col_print, col_spacer = st.columns([1, 1, 1, 1], gap="small")
+
+    with col_save:
+        already_saved = st.session_state.get("forecast_saved", False)
+        btn_label = "✓ Saved!" if already_saved else "💾 Save Forecast"
+        if st.button(btn_label, width='stretch', disabled=already_saved,
+                     help="Save this forecast so you can find it later in the sidebar."):
+            save_forecast(label, inputs, result, shap_drivers, shap_base)
+            st.session_state["forecast_saved"] = True
+            st.rerun()
+
+    with col_dl:
+        xlsx = single_forecast_excel_bytes(label, inputs, result, shap_drivers, shap_base)
+        safe_name = label.replace(" ", "_").replace("/", "-")
+        st.download_button(
+            label="📥 Download Excel",
+            data=xlsx,
+            file_name=f"{safe_name}_forecast.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width='stretch',
+            help="Downloads a .xlsx file with projections, monthly breakdown, and revenue drivers.",
+        )
+
+    with col_print:
+        if st.button("🖨 Print", width="stretch",
+                     help="Open the browser print dialog for this page."):
+            st.session_state["trigger_print"] = True
+
+    # Inject print() into the parent document so it escapes the iframe sandbox.
+    # Unique nonce per click prevents Streamlit from skipping re-render.
+    if st.session_state.pop("trigger_print", False):
+        import time
+        nonce = int(time.time() * 1000)
+        st.html(
+            f"""<script>
+            (function(){{
+                /* nonce:{nonce} */
+                var s = window.parent.document.createElement('script');
+                s.textContent = 'window.print();';
+                window.parent.document.head.appendChild(s);
+                s.parentNode.removeChild(s);
+            }})();
+            </script>""",
+            unsafe_allow_javascript=True,
+        )
 
 
 def _divider() -> None:
