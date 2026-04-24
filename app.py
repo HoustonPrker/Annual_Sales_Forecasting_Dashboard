@@ -1,6 +1,7 @@
 import streamlit as st
 
 from model import load_artifacts
+from saved_forecasts import delete_forecast, list_forecasts, to_excel_bytes
 from tabs import tab_info, tab_performance, tab_predictor
 
 st.set_page_config(
@@ -21,7 +22,7 @@ st.markdown(
         max-width: 1100px;
       }
 
-      /* iframes from components.html need transparent bg to sit on page color */
+      /* st.html embeds need transparent bg */
       iframe { background: transparent !important; }
 
       /* Clean sans-serif everywhere */
@@ -189,6 +190,41 @@ st.markdown(
         overflow: hidden;
       }
 
+      /* ── Print styles ── */
+      @media print {
+        /* Hide everything that isn't the main content */
+        [data-testid="stSidebar"],
+        [data-testid="stHeader"],
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        .stTabs [data-baseweb="tab-list"],
+        .stAppDeployButton,
+        footer,
+        #MainMenu { display: none !important; }
+
+        /* Remove gray page background */
+        .stApp, html, body { background: white !important; }
+
+        /* Remove padding so content fills the page */
+        .block-container {
+          padding: 0 !important;
+          max-width: 100% !important;
+        }
+
+        /* Make the main content fill the full width */
+        section[data-testid="stMain"] {
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+        }
+
+        /* Hide the Save/Export/Print action buttons when printing */
+        [data-testid="stHorizontalBlock"]:has(
+          [data-testid="stButton"] [kind="secondary"]
+        ) { display: none !important; }
+      }
+
       /* Success/info banners */
       .stSuccess {
         background: #F0FDF4 !important;
@@ -228,6 +264,63 @@ st.sidebar.markdown(
     "</div>",
     unsafe_allow_html=True,
 )
+
+# ── Saved forecasts panel ─────────────────────────────────────────────────────
+st.sidebar.markdown("---")
+st.sidebar.markdown(
+    "<p style='font-size:13px; font-weight:700; color:#1E3A5F; margin-bottom:6px;'>"
+    "Saved Forecasts</p>",
+    unsafe_allow_html=True,
+)
+
+saved = list_forecasts()
+
+if not saved:
+    st.sidebar.markdown(
+        "<div style='font-size:12px; color:#94A3B8;'>No forecasts saved yet.<br>"
+        "Generate a forecast and click <b>Save Forecast</b>.</div>",
+        unsafe_allow_html=True,
+    )
+else:
+    for fc in reversed(saved):
+        with st.sidebar.expander(fc["hospital_name"], expanded=False):
+            st.markdown(
+                f"<div style='font-size:12px; color:#64748B; margin-bottom:6px;'>"
+                f"Saved {fc['saved_at']}</div>",
+                unsafe_allow_html=True,
+            )
+            lo, mid, hi = fc["conservative"], fc["accurate"], fc["optimistic"]
+            st.markdown(
+                f"<div style='font-size:13px;'>"
+                f"<b style='color:#1E3A5F;'>${mid:,.0f}</b> most likely<br>"
+                f"<span style='color:#94A3B8; font-size:11px;'>"
+                f"${lo:,.0f} – ${hi:,.0f}</span></div>",
+                unsafe_allow_html=True,
+            )
+            xlsx = to_excel_bytes([fc])
+            safe_name = fc["hospital_name"].replace(" ", "_").replace("/", "-")
+            st.download_button(
+                label="📥 Download Excel",
+                data=xlsx,
+                file_name=f"{safe_name}_forecast.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                width='stretch',
+                key=f"dl_{fc['id']}",
+            )
+            if st.button("🗑 Delete", width='stretch', key=f"del_{fc['id']}"):
+                delete_forecast(fc["id"])
+                st.rerun()
+
+    if len(saved) > 1:
+        st.sidebar.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+        all_xlsx = to_excel_bytes(saved)
+        st.sidebar.download_button(
+            label="📥 Download All as Excel",
+            data=all_xlsx,
+            file_name="all_forecasts.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            width='stretch',
+        )
 
 tab1, tab2, tab3 = st.tabs(["🏪  Revenue Forecast", "📊  Store Performance", "ℹ️  About This Model"])
 

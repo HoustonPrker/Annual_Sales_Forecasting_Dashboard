@@ -1,5 +1,6 @@
 import streamlit as st
-import streamlit.components.v1 as components
+
+from charts import prediction_accuracy_chart
 
 _FEATURES = [
     ("Patient Volume",           "How many patients are in the hospital on a given day."),
@@ -16,7 +17,8 @@ _FEATURES = [
 ]
 
 
-def _comparison_html() -> str:
+
+def _accuracy_stats_html() -> str:
     return """
     <!DOCTYPE html><html><head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -25,41 +27,38 @@ def _comparison_html() -> str:
       body { background:transparent; font-family:'Inter',sans-serif; }
       .row { display:flex; gap:16px; }
       .card {
-        flex:1; border-radius:12px; padding:22px 24px;
-        border:1px solid transparent;
+        flex:1; border-radius:12px; padding:20px 22px;
+        border:1px solid transparent; text-align:center;
       }
-      .old { background:#FEF2F2; border-color:#FECACA; }
-      .new { background:#F0FDF4; border-color:#BBF7D0; }
-      .badge {
-        font-size:11px; font-weight:700; text-transform:uppercase;
-        letter-spacing:.08em; margin-bottom:10px;
-      }
-      .old .badge { color:#991B1B; }
-      .new .badge { color:#15803D; }
-      .big { font-size:40px; font-weight:800; line-height:1; margin-bottom:8px; }
-      .old .big { color:#7F1D1D; }
-      .new .big { color:#14532D; }
-      .desc { font-size:13px; color:#6B7280; }
+      .old  { background:#FEF2F2; border-color:#FECACA; }
+      .new  { background:#F0FDF4; border-color:#BBF7D0; }
+      .impr { background:#EEF2FF; border-color:#C7D2FE; }
+      .label { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; margin-bottom:8px; }
+      .old  .label { color:#991B1B; }
+      .new  .label { color:#15803D; }
+      .impr .label { color:#3730A3; }
+      .big  { font-size:32px; font-weight:800; line-height:1; margin-bottom:6px; }
+      .old  .big { color:#7F1D1D; }
+      .new  .big { color:#14532D; }
+      .impr .big { color:#312E81; }
+      .sub  { font-size:12px; color:#6B7280; }
     </style></head>
     <body>
       <div class="row">
         <div class="card old">
-          <div class="badge">Previous Method</div>
+          <div class="label">Previous Method (Excel)</div>
           <div class="big">50%</div>
-          <div class="desc">Average prediction error<br>
-            <span style="font-size:12px;color:#9CA3AF;margin-top:4px;display:block;">
-              Single system-wide average. No confidence ranges.
-            </span>
-          </div>
+          <div class="sub">Average Error</div>
         </div>
         <div class="card new">
-          <div class="badge">New Model</div>
+          <div class="label">New Model (ML Ensemble)</div>
           <div class="big">25%</div>
-          <div class="desc">Average prediction error<br>
-            <span style="font-size:12px;color:#9CA3AF;margin-top:4px;display:block;">
-              Tailored to each hospital. Includes a forecast range.
-            </span>
-          </div>
+          <div class="sub">Average Error</div>
+        </div>
+        <div class="card impr">
+          <div class="label">Improvement</div>
+          <div class="big">2.5×</div>
+          <div class="sub">more accurate<br>Wins on 29 of 37 stores</div>
         </div>
       </div>
     </body></html>
@@ -68,6 +67,18 @@ def _comparison_html() -> str:
 
 def render(cfg: dict) -> None:
     st.markdown("## About This Model")
+
+    # ── Prediction accuracy comparison chart (top of tab) ─────────────────────
+    _heading("Prediction Accuracy Comparison")
+    st.markdown(
+        "<p style='color:#64748B; font-size:13px; margin-top:-6px; margin-bottom:12px;'>"
+        "Dots closer to the diagonal line = more accurate predictions</p>",
+        unsafe_allow_html=True,
+    )
+    fig = prediction_accuracy_chart()
+    st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
+    st.html(_accuracy_stats_html())
+    st.markdown("<div style='height:16px'></div>", unsafe_allow_html=True)
 
     # ── How it works ──────────────────────────────────────────────────────────
     _heading("How It Works")
@@ -98,15 +109,6 @@ def render(cfg: dict) -> None:
         "On average, the model's predictions are **within 25% of actual revenue**. "
         "For **7 out of 10 stores**, the actual result falls within the forecast range. "
         "Accuracy is expected to improve significantly as Cloverkey reaches 70+ stores by early 2027."
-    )
-
-    # ── Comparison ───────────────────────────────────────────────────────────
-    _heading("New Model vs. Previous Method")
-    components.html(_comparison_html(), height=148, scrolling=False)
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    st.success(
-        "The new model is **2.5× more accurate** than the previous method and provides a "
-        "forecast range — a conservative estimate and an optimistic estimate — for every prediction."
     )
 
     # ── Questions ─────────────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 
 def _accuracy(ape: float) -> str:
@@ -68,7 +67,7 @@ def render(existing_df: pd.DataFrame) -> None:
     )
     total      = len(raw)
 
-    components.html(_summary_cards_html(avg_acc, within, total), height=120, scrolling=False)
+    st.html(_summary_cards_html(avg_acc, within, total))
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
     disp = raw[["Store", "Hospital Name", "annualized_actual", "annualized_predicted", "ape"]].copy()
@@ -83,4 +82,4 @@ def render(existing_df: pd.DataFrame) -> None:
         "annualized_predicted":  "Predicted Annual Revenue",
     })
 
-    st.dataframe(disp, use_container_width=True, hide_index=True, height=660)
+    st.dataframe(disp, width='stretch', hide_index=True, height=660)
