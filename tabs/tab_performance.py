@@ -13,7 +13,7 @@ def _load() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _summary_html(stores_within_10pct: int, total: int, avg_dollar_off: float, best_store: str, worst_store: str) -> str:
+def _summary_html(stores_within_10pct: int, landed_in_range: int, beat_excel: int, total: int) -> str:
     return f"""
     <!DOCTYPE html><html><head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -35,19 +35,19 @@ def _summary_html(stores_within_10pct: int, total: int, avg_dollar_off: float, b
     <body>
       <div class="row">
         <div class="card">
-          <div class="label" style="color:#1D4ED8;">Spot-On Forecasts</div>
+          <div class="label" style="color:#1D4ED8;">Near-Perfect Forecasts</div>
           <div class="value" style="color:#1E3A5F;">{stores_within_10pct} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
-          <div class="sub">Stores where we landed within 10% of actual revenue</div>
+          <div class="sub">Stores where we came within 10% of actual revenue</div>
         </div>
         <div class="card">
-          <div class="label" style="color:#15803D;">Average Miss</div>
-          <div class="value" style="color:#14532D;">${avg_dollar_off:,.0f}</div>
-          <div class="sub">How far off our forecast was, on average</div>
+          <div class="label" style="color:#15803D;">Revenue Landed in Our Range</div>
+          <div class="value" style="color:#14532D;">{landed_in_range} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
+          <div class="sub">Stores where actual revenue fell between our low and high estimate</div>
         </div>
         <div class="card">
-          <div class="label" style="color:#B45309;">Best vs. Hardest</div>
-          <div class="value" style="color:#92400E; font-size:22px; line-height:1.3;">#{best_store}</div>
-          <div class="sub">Best predicted store &nbsp;·&nbsp; Hardest: #{worst_store}</div>
+          <div class="label" style="color:#B45309;">Beat the Old Method</div>
+          <div class="value" style="color:#92400E;">{beat_excel} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
+          <div class="sub">Stores where our model was closer than the previous Excel forecast</div>
         </div>
       </div>
     </body></html>
@@ -73,12 +73,21 @@ def render(cfg: dict) -> None:
     # Dollar difference (absolute)
     raw["Dollar_Off"] = (raw["Predicted_Annual"] - raw["Actual_Annual"]).abs()
 
-    stores_within_10pct = int((raw["APE"] <= 10).sum())
-    avg_dollar_off      = raw["Dollar_Off"].mean()
-    best_store          = str(int(raw.iloc[0]["Store"]))
-    worst_store         = str(int(raw.iloc[-1]["Store"]))
+    _excel = {
+        101:629392,102:405601,103:365592,104:440519,105:321790,106:543024,108:327904,
+        109:411076,110:359472,111:313408,112:355413,113:201598,114:277351,115:579626,
+        118:1265759,119:331651,120:267622,122:266400,123:537817,124:1069438,125:542055,
+        126:388599,127:504811,128:567930,129:383998,130:370973,131:406039,132:410552,
+        133:238332,134:330571,135:854461,136:964357,140:693961,141:304131,142:320169,
+        144:427139,145:235109,
+    }
+    raw["Excel_Off"] = (raw["Store"].map(_excel) - raw["Actual_Annual"]).abs()
 
-    st.html(_summary_html(stores_within_10pct, len(raw), avg_dollar_off, best_store, worst_store))
+    stores_within_10pct = int((raw["APE"] <= 10).sum())
+    landed_in_range     = int(raw["In_CI"].sum())
+    beat_excel          = int((raw["Dollar_Off"] < raw["Excel_Off"]).sum())
+
+    st.html(_summary_html(stores_within_10pct, landed_in_range, beat_excel, len(raw)))
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
     # Build display table
