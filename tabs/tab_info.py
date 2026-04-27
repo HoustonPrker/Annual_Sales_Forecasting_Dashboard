@@ -54,13 +54,13 @@ def _accuracy_stats_html() -> str:
         </div>
         <div class="card new">
           <div class="label">New Model (ML Ensemble)</div>
-          <div class="big">25%</div>
+          <div class="big">28%</div>
           <div class="sub">Average Error</div>
         </div>
         <div class="card impr">
           <div class="label">Improvement</div>
-          <div class="big">2.5×</div>
-          <div class="sub">more accurate<br>Wins on 29 of 37 stores</div>
+          <div class="big">1.8×</div>
+          <div class="sub">more accurate<br>Wins on 25 of 37 stores</div>
         </div>
       </div>
     </body></html>
@@ -108,9 +108,10 @@ def render(cfg: dict) -> None:
     # ── How accurate ─────────────────────────────────────────────────────────
     _heading("How Accurate Is It?")
     st.markdown(
-        "On average, the model's predictions are **within 25% of actual revenue**. "
-        "For **7 out of 10 stores**, the actual result falls within the forecast range. "
-        "Accuracy is expected to improve significantly as Cloverkey reaches 70+ stores by early 2027."
+        "On average, the model's predictions are **within 28% of actual revenue** — "
+        "nearly **twice as accurate** as the previous Excel method. "
+        "For roughly **half of all stores**, the actual result lands directly within the forecast range. "
+        "Accuracy is expected to improve as Cloverkey grows beyond 37 stores."
     )
 
     # ── Questions ─────────────────────────────────────────────────────────────
