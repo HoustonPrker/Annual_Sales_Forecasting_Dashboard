@@ -13,7 +13,7 @@ def _load() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _metrics_html(avg_accuracy: float, typical_error: float, within: int, total: int) -> str:
+def _summary_html(stores_within_10pct: int, total: int, avg_dollar_off: float, best_store: str, worst_store: str) -> str:
     return f"""
     <!DOCTYPE html><html><head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -35,19 +35,19 @@ def _metrics_html(avg_accuracy: float, typical_error: float, within: int, total:
     <body>
       <div class="row">
         <div class="card">
-          <div class="label" style="color:#1D4ED8;">Average Accuracy</div>
-          <div class="value" style="color:#1E3A5F;">{avg_accuracy:.0f}%</div>
-          <div class="sub">Across all 37 stores</div>
+          <div class="label" style="color:#1D4ED8;">Spot-On Forecasts</div>
+          <div class="value" style="color:#1E3A5F;">{stores_within_10pct} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
+          <div class="sub">Stores where we landed within 10% of actual revenue</div>
         </div>
         <div class="card">
-          <div class="label" style="color:#15803D;">Typical Store</div>
-          <div class="value" style="color:#14532D;">{100 - typical_error:.0f}%</div>
-          <div class="sub">Accuracy for a typical store</div>
+          <div class="label" style="color:#15803D;">Average Miss</div>
+          <div class="value" style="color:#14532D;">${avg_dollar_off:,.0f}</div>
+          <div class="sub">How far off our forecast was, on average</div>
         </div>
         <div class="card">
-          <div class="label" style="color:#B45309;">Forecast Range</div>
-          <div class="value" style="color:#92400E;">{within} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
-          <div class="sub">Stores where actual revenue landed in our range</div>
+          <div class="label" style="color:#B45309;">Best vs. Hardest</div>
+          <div class="value" style="color:#92400E; font-size:22px; line-height:1.3;">#{best_store}</div>
+          <div class="sub">Best predicted store &nbsp;·&nbsp; Hardest: #{worst_store}</div>
         </div>
       </div>
     </body></html>
@@ -58,8 +58,8 @@ def render(cfg: dict) -> None:
     st.markdown("## Store Performance")
     st.markdown(
         "<p style='color:#64748B; font-size:14px; margin-bottom:20px;'>"
-        "How close were our forecasts to reality across all 37 existing Cloverkey stores? "
-        "Closest predictions shown first.</p>",
+        "How close were our revenue forecasts to what each of our 37 stores actually earned? "
+        "Best predictions shown first.</p>",
         unsafe_allow_html=True,
     )
 
@@ -70,46 +70,56 @@ def render(cfg: dict) -> None:
 
     raw = raw.sort_values("APE").reset_index(drop=True)
 
-    avg_accuracy  = 100 - raw["APE"].mean()
-    typical_error = raw["APE"].median()
-    within        = int(raw["In_CI"].sum())
-    total         = len(raw)
+    # Dollar difference (absolute)
+    raw["Dollar_Off"] = (raw["Predicted_Annual"] - raw["Actual_Annual"]).abs()
 
-    st.html(_metrics_html(avg_accuracy, typical_error, within, total))
+    stores_within_10pct = int((raw["APE"] <= 10).sum())
+    avg_dollar_off      = raw["Dollar_Off"].mean()
+    best_store          = str(int(raw.iloc[0]["Store"]))
+    worst_store         = str(int(raw.iloc[-1]["Store"]))
+
+    st.html(_summary_html(stores_within_10pct, len(raw), avg_dollar_off, best_store, worst_store))
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    disp = raw[["Store", "Actual_Annual", "Predicted_Annual",
-                "Conservative", "Optimistic", "APE", "In_CI"]].copy()
+    # Build display table
+    disp = raw[["Store", "Actual_Annual", "Predicted_Annual", "Dollar_Off",
+                "Conservative", "Optimistic", "In_CI"]].copy()
 
     in_ci_mask = disp["In_CI"].astype(bool)
+
+    # Direction of miss
+    direction = (raw["Predicted_Annual"] - raw["Actual_Annual"]).apply(
+        lambda v: "We over-forecast" if v > 0 else "We under-forecast"
+    )
+    disp["Verdict"] = direction
 
     def _style_rows(df):
         styles = pd.DataFrame("", index=df.index, columns=df.columns)
         styles.loc[in_ci_mask, :]  = "background-color: #F0FDF4"
-        styles.loc[~in_ci_mask, :] = "background-color: #FEF2F2"
+        styles.loc[~in_ci_mask, :] = "background-color: #FFF7ED"
         return styles
 
     for col in ["Actual_Annual", "Predicted_Annual", "Conservative", "Optimistic"]:
         disp[col] = disp[col].map("${:,.0f}".format)
-    disp["APE"]   = disp["APE"].map(lambda v: f"{v:.1f}% off")
-    disp["In_CI"] = in_ci_mask.map({True: "Yes", False: "No"})
+    disp["Dollar_Off"] = disp["Dollar_Off"].map("${:,.0f}".format)
+    disp["In_CI"] = in_ci_mask.map({True: "✓ Yes", False: "✗ No"})
 
     disp = disp.rename(columns={
-        "Store":            "Store",
-        "Actual_Annual":    "Actual Revenue",
-        "Predicted_Annual": "Our Forecast",
-        "Conservative":     "Low Estimate",
-        "Optimistic":       "High Estimate",
-        "APE":              "How Far Off",
-        "In_CI":            "Hit the Range?",
+        "Store":             "Store",
+        "Actual_Annual":     "Actual Revenue",
+        "Predicted_Annual":  "Our Forecast",
+        "Dollar_Off":        "$ Difference",
+        "Conservative":      "Low Estimate",
+        "Optimistic":        "High Estimate",
+        "In_CI":             "Actual in Range?",
+        "Verdict":           "Direction",
     })
 
     styled = disp.style.apply(_style_rows, axis=None)
     st.dataframe(styled, width="stretch", hide_index=True, height=660)
 
     st.caption(
-        "Green rows = actual revenue landed between our low and high estimates. "
-        "Red rows = actual revenue fell outside our estimated range. "
-        "The 19 stores outside the range are mostly very small or specialty hospitals "
-        "with unusual revenue patterns that are harder to predict."
+        "Green rows: actual revenue fell inside our estimated range (Low → High Estimate). "
+        "Orange rows: actual revenue landed outside our range. "
+        "$ Difference shows how far our central forecast was from reality in dollar terms."
     )
