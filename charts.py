@@ -1,14 +1,11 @@
 """Plotly chart builders — no Streamlit imports."""
 import math
-from datetime import date
 
 import pandas as pd
 import plotly.graph_objects as go
 
 FEATURE_LABELS = {
-    "Gift_Shop_Outlier_Flag":        "Store Size Category",
     "Months_Since_Open":             "Store Maturity",
-    "log_FTE":                       "Hospital Staff Size",
     "Affiliation_enc":               "Health System",
     "log_Staffed_Beds":              "Hospital Beds",
     "Time to Main Elevator Bank":    "Proximity to Elevator",
@@ -17,6 +14,10 @@ FEATURE_LABELS = {
     "Month_Sine":                    "Seasonal Pattern",
     "Month_Cosine":                  "Seasonal Cycle",
     "Month_Fraction":                "Partial Opening Month",
+    "log_Giftshop_Sq_Ft":            "Gift Shop Square Footage",
+    "Occupancy_Rate":                "Hospital Occupancy Rate",
+    "Hospital_Type_enc":             "Hospital Type",
+    "Payroll Ded":                   "Payroll Deduction",
 }
 
 # ── Shared layout defaults ────────────────────────────────────────────────────
@@ -28,10 +29,9 @@ _LAYOUT = dict(
 )
 
 
-def revenue_chart(monthly_revenue: list[float], monthly_dates: list[date], ci: dict) -> go.Figure:
-    labels = [d.strftime("%b %Y") for d in monthly_dates]
-    low  = [r * (1 + ci["r_low"])  for r in monthly_revenue]
-    high = [r * (1 + ci["r_high"]) for r in monthly_revenue]
+def revenue_chart(monthly_revenue: list[float], labels: list[str], residual_shifts: dict) -> go.Figure:
+    low  = [r * (1 + residual_shifts["conservative"]) for r in monthly_revenue]
+    high = [r * (1 + residual_shifts["optimistic"])   for r in monthly_revenue]
 
     fig = go.Figure()
 
@@ -87,12 +87,32 @@ def revenue_chart(monthly_revenue: list[float], monthly_dates: list[date], ci: d
 
 def prediction_accuracy_chart() -> go.Figure:
     """Scatter plot comparing ML model vs Excel model predictions against actual revenue."""
+    import os, pandas as pd
+    _csv = os.path.join(os.path.dirname(__file__), "model_files", "store_summary.csv")
+    try:
+        _df = pd.read_csv(_csv)[["Store", "Actual_Annual", "Predicted_Annual"]].copy()
+        _df.columns = ["Store", "Actual", "ML_Predicted"]
+    except FileNotFoundError:
+        _df = pd.DataFrame({"Store": [], "Actual": [], "ML_Predicted": []})
+
+    # Excel baseline predictions (unchanged reference for comparison)
+    _excel = {
+        101: 629392, 102: 405601, 103: 365592, 104: 440519, 105: 321790,
+        106: 543024, 108: 327904, 109: 411076, 110: 359472, 111: 313408,
+        112: 355413, 113: 201598, 114: 277351, 115: 579626, 118: 1265759,
+        119: 331651, 120: 267622, 122: 266400, 123: 537817, 124: 1069438,
+        125: 542055, 126: 388599, 127: 504811, 128: 567930, 129: 383998,
+        130: 370973, 131: 406039, 132: 410552, 133: 238332, 134: 330571,
+        135: 854461, 136: 964357, 140: 693961, 141: 304131, 142: 320169,
+        144: 427139, 145: 235109,
+    }
+    _df["Excel_Predicted"] = _df["Store"].map(_excel)
 
     data = {
-        "Store": [101, 102, 103, 104, 105, 106, 108, 109, 110, 111, 112, 113, 114, 115, 118, 119, 120, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 140, 141, 142, 144, 145],
-        "Actual":       [1115053, 201567, 422939, 316316, 149033, 127107, 626383, 644790, 250150, 327023, 295269, 164401, 168665, 535015, 586053, 189010, 118555, 269363, 453540, 1381525, 876269, 285720, 474422, 632755, 406451, 268286, 350661, 331315, 81310, 278446, 940192, 1787826, 1089915, 230884, 359008, 298794, 209200],
-        "ML_Predicted": [1275494, 246678, 341895, 292731, 131784, 239343, 506702, 463959, 260255, 255706, 278255, 172364, 244588, 443219, 794249, 149308, 145480, 251740, 337716, 1278894, 650342, 302509, 508583, 490675, 228674, 240915, 378608, 266788, 109838, 183607, 526642, 1483753, 646844, 202551, 320344, 328468, 174065],
-        "Excel_Predicted": [629392, 405601, 365592, 440519, 321790, 543024, 327904, 411076, 359472, 313408, 355413, 201598, 277351, 579626, 1265759, 331651, 267622, 266400, 537817, 1069438, 542055, 388599, 504811, 567930, 383998, 370973, 406039, 410552, 238332, 330571, 854461, 964357, 693961, 304131, 320169, 427139, 235109],
+        "Store":           _df["Store"].tolist(),
+        "Actual":          _df["Actual"].tolist(),
+        "ML_Predicted":    _df["ML_Predicted"].tolist(),
+        "Excel_Predicted": _df["Excel_Predicted"].tolist(),
     }
 
     max_val = 2_000_000

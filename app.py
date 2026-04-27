@@ -244,7 +244,7 @@ st.markdown(
 )
 
 artifacts = load_artifacts()
-cfg, _, _, _, _, _, existing_df, _ = artifacts
+cfg, _, _, _, _, existing_df, _ = artifacts
 
 st.sidebar.markdown(
     """
@@ -328,7 +328,7 @@ with tab1:
     tab_predictor.render(artifacts)
 
 with tab2:
-    tab_performance.render(existing_df)
+    tab_performance.render(cfg)
 
 with tab3:
     tab_info.render(cfg)

@@ -1,21 +1,19 @@
+import os
+
 import pandas as pd
 import streamlit as st
 
-
-def _accuracy(ape: float) -> str:
-    return f"{max(0.0, 100.0 - ape):.0f}%"
+_CSV_PATH = os.path.join(os.path.dirname(__file__), "..", "model_files", "store_summary.csv")
 
 
-def _status(ape: float) -> str:
-    if ape < 15:
-        return "✅  On target"
-    if ape <= 30:
-        return "🟡  Acceptable"
-    return "🔴  Wide miss"
+def _load() -> pd.DataFrame:
+    try:
+        return pd.read_csv(_CSV_PATH)
+    except FileNotFoundError:
+        return pd.DataFrame()
 
 
-def _summary_cards_html(avg_acc: float, within: int, total: int) -> str:
-    pct = f"{within / total:.0%}"
+def _metrics_html(avg_accuracy: float, typical_error: float, within: int, total: int) -> str:
     return f"""
     <!DOCTYPE html><html><head>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -37,49 +35,81 @@ def _summary_cards_html(avg_acc: float, within: int, total: int) -> str:
     <body>
       <div class="row">
         <div class="card">
-          <div class="label" style="color:#15803D;">Average Prediction Accuracy</div>
-          <div class="value" style="color:#14532D;">{avg_acc:.0f}%</div>
-          <div class="sub">Across all 37 training stores</div>
+          <div class="label" style="color:#1D4ED8;">Average Accuracy</div>
+          <div class="value" style="color:#1E3A5F;">{avg_accuracy:.0f}%</div>
+          <div class="sub">Across all 37 stores</div>
         </div>
         <div class="card">
-          <div class="label" style="color:#1D4ED8;">Stores Within Forecast Range</div>
-          <div class="value" style="color:#1E3A5F;">{within} <span style="font-size:20px;color:#64748B;">of {total}</span></div>
-          <div class="sub">{pct} fall within the predicted range</div>
+          <div class="label" style="color:#15803D;">Typical Store</div>
+          <div class="value" style="color:#14532D;">{100 - typical_error:.0f}%</div>
+          <div class="sub">Accuracy for a typical store</div>
+        </div>
+        <div class="card">
+          <div class="label" style="color:#B45309;">Forecast Range</div>
+          <div class="value" style="color:#92400E;">{within} <span style="font-size:20px; color:#64748B;">of {total}</span></div>
+          <div class="sub">Stores where actual revenue landed in our range</div>
         </div>
       </div>
     </body></html>
     """
 
 
-def render(existing_df: pd.DataFrame) -> None:
+def render(cfg: dict) -> None:
     st.markdown("## Store Performance")
     st.markdown(
         "<p style='color:#64748B; font-size:14px; margin-bottom:20px;'>"
-        "Actual vs. predicted revenue for all 37 stores used to train the model.</p>",
+        "How close were our forecasts to reality across all 37 existing Cloverkey stores? "
+        "Closest predictions shown first.</p>",
         unsafe_allow_html=True,
     )
 
-    raw = existing_df.copy()
-    avg_acc    = max(0.0, 100.0 - raw["ape"].mean())
-    within     = int(
-        ((raw["annualized_actual"] >= raw["conservative"])
-         & (raw["annualized_actual"] <= raw["optimistic"])).sum()
-    )
-    total      = len(raw)
+    raw = _load()
+    if raw.empty:
+        st.info("Store performance data is not available in this deployment.")
+        return
 
-    st.html(_summary_cards_html(avg_acc, within, total))
+    raw = raw.sort_values("APE").reset_index(drop=True)
+
+    avg_accuracy  = 100 - raw["APE"].mean()
+    typical_error = raw["APE"].median()
+    within        = int(raw["In_CI"].sum())
+    total         = len(raw)
+
+    st.html(_metrics_html(avg_accuracy, typical_error, within, total))
     st.markdown("<div style='height:20px'></div>", unsafe_allow_html=True)
 
-    disp = raw[["Store", "Hospital Name", "annualized_actual", "annualized_predicted", "ape"]].copy()
-    disp["Accuracy"] = disp["ape"].apply(_accuracy)
-    disp["Status"]   = disp["ape"].apply(_status)
-    disp["annualized_actual"]    = disp["annualized_actual"].map("${:,.0f}".format)
-    disp["annualized_predicted"] = disp["annualized_predicted"].map("${:,.0f}".format)
-    disp = disp.drop(columns=["ape"]).rename(columns={
-        "Store":                 "Store #",
-        "Hospital Name":         "Hospital",
-        "annualized_actual":     "Actual Annual Revenue",
-        "annualized_predicted":  "Predicted Annual Revenue",
+    disp = raw[["Store", "Actual_Annual", "Predicted_Annual",
+                "Conservative", "Optimistic", "APE", "In_CI"]].copy()
+
+    in_ci_mask = disp["In_CI"].astype(bool)
+
+    def _style_rows(df):
+        styles = pd.DataFrame("", index=df.index, columns=df.columns)
+        styles.loc[in_ci_mask, :]  = "background-color: #F0FDF4"
+        styles.loc[~in_ci_mask, :] = "background-color: #FEF2F2"
+        return styles
+
+    for col in ["Actual_Annual", "Predicted_Annual", "Conservative", "Optimistic"]:
+        disp[col] = disp[col].map("${:,.0f}".format)
+    disp["APE"]   = disp["APE"].map(lambda v: f"{v:.1f}% off")
+    disp["In_CI"] = in_ci_mask.map({True: "Yes", False: "No"})
+
+    disp = disp.rename(columns={
+        "Store":            "Store",
+        "Actual_Annual":    "Actual Revenue",
+        "Predicted_Annual": "Our Forecast",
+        "Conservative":     "Low Estimate",
+        "Optimistic":       "High Estimate",
+        "APE":              "How Far Off",
+        "In_CI":            "Hit the Range?",
     })
 
-    st.dataframe(disp, width='stretch', hide_index=True, height=660)
+    styled = disp.style.apply(_style_rows, axis=None)
+    st.dataframe(styled, width="stretch", hide_index=True, height=660)
+
+    st.caption(
+        "Green rows = actual revenue landed between our low and high estimates. "
+        "Red rows = actual revenue fell outside our estimated range. "
+        "The 19 stores outside the range are mostly very small or specialty hospitals "
+        "with unusual revenue patterns that are harder to predict."
+    )

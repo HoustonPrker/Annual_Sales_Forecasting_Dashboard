@@ -1,8 +1,6 @@
 {
-  "final_features": [
-    "Gift_Shop_Outlier_Flag",
+  "features": [
     "Months_Since_Open",
-    "log_FTE",
     "Affiliation_enc",
     "log_Staffed_Beds",
     "Time to Main Elevator Bank",
@@ -10,100 +8,28 @@
     "Time to Cafeteria",
     "Month_Sine",
     "Month_Cosine",
-    "Month_Fraction"
+    "Month_Fraction",
+    "log_Giftshop_Sq_Ft",
+    "Occupancy_Rate",
+    "Hospital_Type_enc",
+    "Payroll Ded"
   ],
   "blend_weights": {
-    "lgbm": 0.05,
-    "ridge": 0.45,
-    "enet": 0.5
+    "lgbm": 0.2,
+    "ridge": 0.6500000000000001,
+    "enet": 0.15
   },
-  "confidence_intervals": {
-    "r_low": -0.14203848887082238,
-    "r_high": 0.24529460988605933
+  "residual_shifts": {
+    "conservative": -0.17613669638068785,
+    "optimistic": 0.2762684157003328
   },
-  "affiliation_lookup": {
-    "Care New England Health System": 36654.093583539354,
-    "City of Ames": 32560.98660838332,
-    "Common Spirit Health": 30550.595657660055,
-    "Cook County Health": 52206.83321065874,
-    "Ellis Medicine": 34252.05384462389,
-    "Englewood Health": 32176.286130186752,
-    "HCA Healthcare": 32818.30790470023,
-    "Harvard Medical School": 82347.33414043915,
-    "Houston Methodist": 47020.83842114396,
-    "Jefferson Health": 17218.357233867915,
-    "Main Line Health": 23895.01514528189,
-    "Mass General Brigham": 65227.074015790735,
-    "Moffitt Cancer Center": 39530.84920960053,
-    "Northwestern Medicine": 35501.194845298436,
-    "Penn Medicine": 29476.74634517638,
-    "Piedmont Healthcare": 29338.808835487813,
-    "Summa Health System": 46678.646978753684,
-    "TENET Healthcare": 22543.936318134016,
-    "The University of Rochester Medical Center": 78572.38860059885,
-    "WellStar Health System": 22170.88342593363,
-    "West Tennessee Healthcare": 45779.01593705399,
-    "Other / New System": 34342.95608561867
+  "metrics": {
+    "mape": 33.87779796107966,
+    "medape": 22.992153213534028,
+    "mae": 9600.55443233334,
+    "r2": 0.7649290742330089
   },
-  "flag_classifier_features": [
-    "log_Giftshop_Sq_Ft",
-    "Occupancy_Rate"
-  ],
-  "input_fields": [
-    {
-      "name": "staffed_beds",
-      "label": "Staffed Beds",
-      "type": "number",
-      "min": 10,
-      "max": 2000
-    },
-    {
-      "name": "fte",
-      "label": "Total Employees (FTE)",
-      "type": "number",
-      "min": 50,
-      "max": 20000
-    },
-    {
-      "name": "adc",
-      "label": "Average Daily Census (ADC)",
-      "type": "number",
-      "min": 1,
-      "max": 2000
-    },
-    {
-      "name": "giftshop_sqft",
-      "label": "Gift Shop Square Footage",
-      "type": "number",
-      "min": 100,
-      "max": 5000
-    },
-    {
-      "name": "affiliation",
-      "label": "Health System Affiliation",
-      "type": "dropdown"
-    },
-    {
-      "name": "dist_elevator",
-      "label": "Distance to Main Elevator Bank (seconds)",
-      "type": "number",
-      "min": 0,
-      "max": 300,
-      "default": 30
-    },
-    {
-      "name": "dist_cafeteria",
-      "label": "Distance to Cafeteria (seconds)",
-      "type": "number",
-      "min": 0,
-      "max": 1000,
-      "default": 55
-    },
-    {
-      "name": "opening_date",
-      "label": "Planned Opening Date",
-      "type": "date"
-    }
-  ],
-  "shap_base_value": 10.216718261617604
+  "architecture": "no_flag_no_fte_v3",
+  "training_rows": 1093,
+  "training_stores": 37
 }

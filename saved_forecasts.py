@@ -37,7 +37,7 @@ def save_forecast(
         "accurate":      result["accurate"],
         "optimistic":    result["optimistic"],
         "monthly_revenue": result["monthly_revenue"],
-        "monthly_dates":   [str(d) for d in result["monthly_dates"]],
+        "monthly_labels":  result["monthly_labels"],
         "shap_drivers":    shap_drivers or {},
         "shap_base":       shap_base,
     })
@@ -90,18 +90,18 @@ def to_excel_bytes(forecasts: list[dict]) -> bytes:
                 "Most Likely":      f["accurate"],
                 "Optimistic":       f["optimistic"],
                 "Staffed Beds":     f["inputs"].get("staffed_beds"),
-                "FTE":              f["inputs"].get("fte"),
                 "ADC":              f["inputs"].get("adc"),
                 "Sq Ft":            f["inputs"].get("giftshop_sqft"),
                 "Health System":    f["inputs"].get("affiliation"),
+                "Hospital Type":    f["inputs"].get("hospital_type"),
+                "Payroll Deduction": "Yes" if f["inputs"].get("payroll_ded") else "No",
                 "Dist. Elevator":   f["inputs"].get("dist_elevator"),
                 "Dist. Cafeteria":  f["inputs"].get("dist_cafeteria"),
-                "Opening Date":     f["inputs"].get("opening_date"),
             }])
             inputs_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=0)
 
             monthly = pd.DataFrame({
-                "Month":             f["monthly_dates"],
+                "Month":             f.get("monthly_labels", [str(i) for i in range(1, 13)]),
                 "Predicted Revenue": f["monthly_revenue"],
             })
             monthly.to_excel(writer, sheet_name=sheet_name, index=False, startrow=3)
@@ -140,7 +140,7 @@ def single_forecast_excel_bytes(
         "accurate":        result["accurate"],
         "optimistic":      result["optimistic"],
         "monthly_revenue": result["monthly_revenue"],
-        "monthly_dates":   [str(d) for d in result["monthly_dates"]],
+        "monthly_labels":  result["monthly_labels"],
         "shap_drivers":    shap_drivers or {},
         "shap_base":       shap_base,
     }

@@ -5,9 +5,11 @@ from charts import prediction_accuracy_chart
 _FEATURES = [
     ("Patient Volume",           "How many patients are in the hospital on a given day."),
     ("Hospital Beds",            "The total number of staffed beds — a proxy for hospital size."),
-    ("Hospital Staff Size",      "Total number of employees across the hospital."),
     ("Health System",            "Which health system operates the hospital."),
-    ("Store Size Category",      "Whether the gift shop is classified as a boutique, standard, or flagship store."),
+    ("Hospital Type",            "Whether the hospital is a Community, Specialty, or Academic institution."),
+    ("Gift Shop Square Footage", "The size of the gift shop retail floor — larger stores tend to generate more revenue."),
+    ("Hospital Occupancy Rate",  "Average Daily Census divided by staffed beds — a measure of how busy the hospital is."),
+    ("Payroll Deduction",        "Whether employees can purchase from the gift shop via payroll deduction."),
     ("Store Maturity",           "How long the store has been open. Newer stores typically ramp up over time."),
     ("Proximity to Elevator",    "Walking time from the gift shop to the main elevator bank."),
     ("Proximity to Cafeteria",   "Walking time from the gift shop to the cafeteria."),
@@ -83,7 +85,7 @@ def render(cfg: dict) -> None:
     # ── How it works ──────────────────────────────────────────────────────────
     _heading("How It Works")
     st.markdown(
-        "This model analyzes **11 characteristics** of a hospital and its gift shop to predict "
+        "This model analyzes **13 characteristics** of a hospital and its gift shop to predict "
         "annual revenue. It was trained on data from **37 Cloverkey gift shops** across the "
         "country and combines three independent forecasting methods to produce a single, "
         "reliable estimate with a built-in confidence range."

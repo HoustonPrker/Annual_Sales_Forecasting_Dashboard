@@ -1,31 +1,33 @@
-from datetime import date
-
 import streamlit as st
 
 from charts import FEATURE_LABELS, revenue_chart, shap_impact_chart
-from model import month_fraction, predict_12_months, safe_log
+from model import predict_12_months, safe_log
 from saved_forecasts import save_forecast, single_forecast_excel_bytes
 
 _HELP = {
-    "beds":      "Total staffed beds from AHD or CMS data.",
-    "fte":       "Total hospital employees (full-time equivalents).",
-    "adc":       "Average Daily Census — average number of inpatients per day.",
-    "sqft":      "Interior square footage of the gift shop retail floor.",
-    "affil":     "Parent health system. Affects expected visitor volume and spending patterns.",
-    "elevator":  "Walking time in seconds from the gift shop entrance to the main elevator bank.",
-    "cafeteria": "Walking time in seconds from the gift shop entrance to the main cafeteria.",
-    "date":      "First day the store is expected to be open to the public.",
+    "beds":        "Total staffed beds from AHD or CMS data.",
+    "adc":         "Average Daily Census — average number of inpatients per day.",
+    "sqft":        "Interior square footage of the gift shop retail floor.",
+    "affil":       "Parent health system. Affects expected visitor volume and spending patterns.",
+    "hosp_type":   "Hospital classification — Community, Specialty, or Academic.",
+    "payroll_ded": "Whether the hospital offers payroll deduction for gift shop purchases.",
+    "elevator":    "Walking time in seconds from the gift shop entrance to the main elevator bank.",
+    "cafeteria":   "Walking time in seconds from the gift shop entrance to the main cafeteria.",
 }
+
+_HOSP_TYPES = ["Community", "Specialty", "Academic"]
 
 
 def render(artifacts: tuple) -> None:
     cfg        = artifacts[0]
-    summary_df = artifacts[7]
-    affil_opts = sorted(cfg["affiliation_lookup"].keys())
+    summary_df = artifacts[6]
+
+    affil_opts = sorted(
+        k for k in cfg["affiliation_lookup"].keys() if k != "Other / New System"
+    ) + ["Other / New System"]
 
     st.markdown("## Revenue Forecast")
 
-    # ── Input form ────────────────────────────────────────────────────────────
     with st.form("forecast_inputs"):
         hospital_name = st.text_input(
             "Hospital Name",
@@ -41,31 +43,34 @@ def render(artifacts: tuple) -> None:
             adc = st.number_input("Average Daily Census (ADC)", min_value=1, max_value=2000, value=150, step=1)
             st.caption(_HELP["adc"])
         with c2:
-            fte = st.number_input("Total Employees (FTE)", min_value=1, max_value=20000, value=500, step=1)
-            st.caption(_HELP["fte"])
             affiliation = st.selectbox(
                 "Health System Affiliation",
                 options=affil_opts,
-                index=affil_opts.index("Other / New System"),
+                index=len(affil_opts) - 1,
             )
             st.caption(_HELP["affil"])
 
-        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-        _section("Gift Shop Details")
         c3, c4 = st.columns(2, gap="large")
         with c3:
+            hospital_type = st.selectbox(
+                "Hospital Type",
+                options=_HOSP_TYPES,
+                index=0,
+            )
+            st.caption(_HELP["hosp_type"])
+        with c4:
+            payroll_ded_bool = st.toggle("Payroll Deduction Available", value=True)
+            st.caption(_HELP["payroll_ded"])
+
+        st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+        _section("Gift Shop Details")
+        c5, c6 = st.columns(2, gap="large")
+        with c5:
             giftshop_sqft = st.number_input("Gift Shop Square Footage", min_value=100, max_value=5000, value=600, step=10)
             st.caption(_HELP["sqft"])
             dist_elevator = st.number_input("Distance to Elevator Bank (seconds)", min_value=0, max_value=300, value=30, step=1)
             st.caption(_HELP["elevator"])
-        with c4:
-            opening_date = st.date_input(
-                "Planned Opening Date",
-                value=date.today(),
-                min_value=date(2000, 1, 1),
-                max_value=date(2035, 12, 31),
-            )
-            st.caption(_HELP["date"])
+        with c6:
             dist_cafeteria = st.number_input("Distance to Cafeteria (seconds)", min_value=0, max_value=1000, value=55, step=1)
             st.caption(_HELP["cafeteria"])
 
@@ -73,20 +78,16 @@ def render(artifacts: tuple) -> None:
         submitted = st.form_submit_button("Generate Forecast", type="primary", width='stretch')
 
     if submitted:
+        payroll_ded = 1 if payroll_ded_bool else 0
         inputs = dict(
-            staffed_beds=staffed_beds, fte=fte, adc=adc,
+            staffed_beds=staffed_beds, adc=adc,
             giftshop_sqft=giftshop_sqft, affiliation=affiliation,
+            hospital_type=hospital_type, payroll_ded=payroll_ded,
             dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
-            opening_date=str(opening_date),
         )
         with st.spinner("Calculating forecast…"):
             try:
-                result = predict_12_months(artifacts, dict(
-                    staffed_beds=staffed_beds, fte=fte, adc=adc,
-                    giftshop_sqft=giftshop_sqft, affiliation=affiliation,
-                    dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
-                    opening_date=opening_date,
-                ))
+                result = predict_12_months(artifacts, inputs)
             except Exception as e:
                 st.error("Forecast could not be generated. Please check your inputs and try again.")
                 with st.expander("Error details"):
@@ -95,7 +96,7 @@ def render(artifacts: tuple) -> None:
 
         shap_drivers = {
             FEATURE_LABELS.get(f, f): float(v)
-            for f, v in zip(cfg["final_features"], result["shap_values"])
+            for f, v in zip(cfg["features"], result["shap_values"])
         }
         st.session_state["last_forecast"] = {
             "hospital_name": hospital_name,
@@ -103,30 +104,27 @@ def render(artifacts: tuple) -> None:
             "result":        result,
             "adc":           adc,
             "staffed_beds":  staffed_beds,
-            "giftshop_sqft": giftshop_sqft,
-            "opening_date":  opening_date,
             "shap_drivers":  shap_drivers,
-            "shap_base":     float(cfg["shap_base_value"]),
+            "shap_base":     float(cfg.get("shap_base_value", 0.0)),
         }
         st.session_state.pop("forecast_saved", None)
 
     if "last_forecast" not in st.session_state:
         return
 
-    fc = st.session_state["last_forecast"]
-    result       = fc["result"]
-    inputs       = fc["inputs"]
+    fc            = st.session_state["last_forecast"]
+    result        = fc["result"]
+    inputs        = fc["inputs"]
     hospital_name = fc["hospital_name"]
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     _render_hero(result)
-    _render_monthly_chart(result, cfg["confidence_intervals"])
+    _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
     _render_comparable_stores(summary_df, fc["adc"], fc["staffed_beds"])
     _render_technical_details(
-        fc["inputs"]["staffed_beds"], fc["inputs"]["fte"],
-        fc["inputs"]["adc"], fc["inputs"]["giftshop_sqft"],
-        fc["opening_date"], result,
+        fc["inputs"]["staffed_beds"], fc["inputs"]["adc"],
+        fc["inputs"]["giftshop_sqft"],
     )
     _render_actions(hospital_name, inputs, result,
                     fc.get("shap_drivers", {}), fc.get("shap_base", 0.0))
@@ -192,40 +190,27 @@ def _card_html(lo: float, mid: float, hi: float) -> str:
 
 def _render_hero(result: dict) -> None:
     lo, mid, hi = result["conservative"], result["accurate"], result["optimistic"]
-
     st.markdown(
         "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:14px;'>"
         "First-Year Revenue Projections</p>",
         unsafe_allow_html=True,
     )
-
     st.html(_card_html(lo, mid, hi))
-
-    # Summary sentence — dollar signs in HTML to avoid LaTeX interpretation
     st.markdown(
         f"Based on similar hospitals in our network, we expect this gift shop to generate "
-        f"between <b>${lo:,.0f}</b> and <b>${hi:,.0f}</b> in its first year, "
-        f"with a most likely outcome of <b>${mid:,.0f}</b>.",
-        unsafe_allow_html=True,
+        f"between **${lo:,.0f}** and **${hi:,.0f}** in its first year, "
+        f"with a most likely outcome of **${mid:,.0f}**."
     )
     _divider()
 
 
-def _render_monthly_chart(result: dict, ci: dict) -> None:
+def _render_monthly_chart(result: dict, residual_shifts: dict) -> None:
     st.markdown(
         "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:4px;'>"
         "Monthly Revenue Forecast</p>",
         unsafe_allow_html=True,
     )
-    # Drop heavily-prorated leading months (< 50% of month 2) so the chart
-    # starts from the first meaningful revenue month
-    rev   = result["monthly_revenue"]
-    dates = result["monthly_dates"]
-    cutoff = rev[1] * 0.5 if len(rev) > 1 else 0
-    trimmed_rev   = [r for r, d in zip(rev, dates) if r >= cutoff]
-    trimmed_dates = [d for r, d in zip(rev, dates) if r >= cutoff]
-
-    fig = revenue_chart(trimmed_rev, trimmed_dates, ci)
+    fig = revenue_chart(result["monthly_revenue"], result["monthly_labels"], residual_shifts)
     st.plotly_chart(fig, width='stretch', config={"displayModeBar": False})
     _divider()
 
@@ -241,15 +226,17 @@ def _render_impact(result: dict, cfg: dict) -> None:
         "Longer bars mean stronger influence."
     )
     fig = shap_impact_chart(
-        cfg["final_features"],
+        cfg["features"],
         result["shap_values"],
-        cfg["shap_base_value"],
+        cfg.get("shap_base_value", 0.0),
     )
     st.plotly_chart(fig, width='stretch')
     _divider()
 
 
 def _render_comparable_stores(summary_df, adc: float, staffed_beds: float) -> None:
+    if summary_df.empty or "log_adc" not in summary_df.columns:
+        return
     st.markdown(
         "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:4px;'>"
         "Similar Hospitals in Our Network</p>",
@@ -309,21 +296,14 @@ def _render_comparable_stores(summary_df, adc: float, staffed_beds: float) -> No
     _divider()
 
 
-def _render_technical_details(beds, fte, adc, sqft, opening_date, result):
+def _render_technical_details(beds, adc, sqft):
     with st.expander("Technical Details", expanded=False):
         st.caption("Internal model inputs — for data team reference only.")
         c1, c2, c3 = st.columns(3)
         c1.metric("Occupancy Rate",    f"{adc / beds:.3f}")
         c2.metric("log(Sq Ft)",        f"{safe_log(sqft):.3f}")
-        c3.metric("Outlier Flag",      str(result["outlier_flag"]))
-        c1.metric("log(Staffed Beds)", f"{safe_log(beds):.3f}")
-        c2.metric("log(FTE)",          f"{safe_log(fte):.3f}")
-        c3.metric("log(ADC)",          f"{safe_log(adc):.3f}")
-        if opening_date.day > 1:
-            frac = month_fraction(opening_date, opening_date)
-            st.info(
-                f"Opening on day {opening_date.day} — Month 1 revenue prorated to {frac:.1%} of a full month."
-            )
+        c3.metric("log(Staffed Beds)", f"{safe_log(beds):.3f}")
+        c1.metric("log(ADC)",          f"{safe_log(adc):.3f}")
 
 
 def _render_actions(
@@ -342,7 +322,7 @@ def _render_actions(
 
     with col_save:
         already_saved = st.session_state.get("forecast_saved", False)
-        btn_label = "✓ Saved!" if already_saved else "💾 Save Forecast"
+        btn_label = "Saved!" if already_saved else "Save Forecast"
         if st.button(btn_label, width='stretch', disabled=already_saved,
                      help="Save this forecast so you can find it later in the sidebar."):
             save_forecast(label, inputs, result, shap_drivers, shap_base)
@@ -353,7 +333,7 @@ def _render_actions(
         xlsx = single_forecast_excel_bytes(label, inputs, result, shap_drivers, shap_base)
         safe_name = label.replace(" ", "_").replace("/", "-")
         st.download_button(
-            label="📥 Download Excel",
+            label="Download Excel",
             data=xlsx,
             file_name=f"{safe_name}_forecast.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -362,12 +342,10 @@ def _render_actions(
         )
 
     with col_print:
-        if st.button("🖨 Print", width="stretch",
+        if st.button("Print", width="stretch",
                      help="Open the browser print dialog for this page."):
             st.session_state["trigger_print"] = True
 
-    # Inject print() into the parent document so it escapes the iframe sandbox.
-    # Unique nonce per click prevents Streamlit from skipping re-render.
     if st.session_state.pop("trigger_print", False):
         import time
         nonce = int(time.time() * 1000)
