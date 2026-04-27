@@ -13,13 +13,13 @@
     "Month_Fraction"
   ],
   "blend_weights": {
-    "lgbm": 0.25,
+    "lgbm": 0.05,
     "ridge": 0.45,
-    "enet": 0.3
+    "enet": 0.5
   },
   "confidence_intervals": {
-    "r_low": -0.14456671606808946,
-    "r_high": 0.22567819751104246
+    "r_low": -0.14203848887082238,
+    "r_high": 0.24529460988605933
   },
   "affiliation_lookup": {
     "Care New England Health System": 36654.093583539354,
@@ -105,5 +105,5 @@
       "type": "date"
     }
   ],
-  "shap_base_value": 10.21655983962076
+  "shap_base_value": 10.216718261617604
 }
