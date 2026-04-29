@@ -74,13 +74,20 @@ st.markdown(
         box-shadow: 0 1px 3px rgba(0,0,0,0.06);
       }
 
+      /* Hide "Press Enter to submit form" tooltip on number inputs */
+      .stNumberInput [data-testid="InputInstructions"],
+      .stTextInput  [data-testid="InputInstructions"] {
+        display: none !important;
+      }
+
       /* Input fields */
       .stNumberInput input, .stTextInput input {
         background: #F8FAFC !important;
         border: 1px solid #CBD5E1 !important;
         border-radius: 6px !important;
         color: #1E293B !important;
-        font-size: 15px !important;
+        font-size: 16px !important;
+        font-weight: 500 !important;
       }
       .stNumberInput input:focus, .stTextInput input:focus {
         border-color: #2563EB !important;
@@ -106,17 +113,17 @@ st.markdown(
       /* Form labels */
       .stNumberInput label, .stSelectbox label, .stDateInput label,
       .stTextInput label {
-        font-weight: 600 !important;
-        font-size: 13px !important;
-        color: #475569 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+        font-weight: 700 !important;
+        font-size: 14px !important;
+        color: #1E293B !important;
+        text-transform: none !important;
+        letter-spacing: 0;
       }
 
       /* Caption / help text */
       .stCaption, small {
-        color: #94A3B8 !important;
-        font-size: 12px !important;
+        color: #64748B !important;
+        font-size: 13px !important;
       }
 
       /* Primary submit button */
@@ -219,10 +226,8 @@ st.markdown(
           padding: 0 !important;
         }
 
-        /* Hide the Save/Export/Print action buttons when printing */
-        [data-testid="stHorizontalBlock"]:has(
-          [data-testid="stButton"] [kind="secondary"]
-        ) { display: none !important; }
+        /* Hide the entire Save/Export/Print actions section when printing */
+        .forecast-actions-section { display: none !important; }
       }
 
       /* Success/info banners */

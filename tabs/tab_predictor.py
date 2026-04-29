@@ -8,7 +8,6 @@ _HELP = {
     "beds":        "Total staffed beds from AHD or CMS data.",
     "adc":         "Average Daily Census — average number of inpatients per day.",
     "sqft":        "Interior square footage of the gift shop retail floor.",
-    "affil":       "Parent health system. Affects expected visitor volume and spending patterns.",
     "hosp_type":   "Hospital classification — Community, Specialty, or Academic.",
     "payroll_ded": "Whether the hospital offers payroll deduction for gift shop purchases.",
     "elevator":    "Walking time in seconds from the gift shop entrance to the main elevator bank.",
@@ -22,10 +21,6 @@ def render(artifacts: tuple) -> None:
     cfg        = artifacts[0]
     summary_df = artifacts[6]
 
-    affil_opts = sorted(
-        k for k in cfg["affiliation_lookup"].keys() if k != "Other / New System"
-    ) + ["Other / New System"]
-
     st.markdown("## Revenue Forecast")
 
     with st.form("forecast_inputs"):
@@ -36,42 +31,31 @@ def render(artifacts: tuple) -> None:
         )
 
         _section("Hospital Information")
-        c1, c2 = st.columns(2, gap="large")
+        c1, c2, c3 = st.columns(3, gap="large")
         with c1:
             staffed_beds = st.number_input("Staffed Beds", min_value=1, max_value=2000, value=200, step=1)
             st.caption(_HELP["beds"])
-            adc = st.number_input("Average Daily Census (ADC)", min_value=1, max_value=2000, value=150, step=1)
-            st.caption(_HELP["adc"])
         with c2:
-            affiliation = st.selectbox(
-                "Health System Affiliation",
-                options=affil_opts,
-                index=len(affil_opts) - 1,
-            )
-            st.caption(_HELP["affil"])
-
-        c3, c4 = st.columns(2, gap="large")
+            adc = st.number_input("Avg Daily Census (ADC)", min_value=1, max_value=2000, value=150, step=1)
+            st.caption(_HELP["adc"])
         with c3:
-            hospital_type = st.selectbox(
-                "Hospital Type",
-                options=_HOSP_TYPES,
-                index=0,
-            )
+            hospital_type = st.selectbox("Hospital Type", options=_HOSP_TYPES, index=0)
             st.caption(_HELP["hosp_type"])
-        with c4:
-            payroll_ded_bool = st.toggle("Payroll Deduction Available", value=True)
-            st.caption(_HELP["payroll_ded"])
+
+        payroll_ded_bool = st.toggle("Payroll Deduction Available", value=True)
+        st.caption(_HELP["payroll_ded"])
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         _section("Gift Shop Details")
-        c5, c6 = st.columns(2, gap="large")
-        with c5:
-            giftshop_sqft = st.number_input("Gift Shop Square Footage", min_value=100, max_value=5000, value=600, step=10)
+        c4, c5, c6 = st.columns(3, gap="large")
+        with c4:
+            giftshop_sqft = st.number_input("Square Footage", min_value=100, max_value=5000, value=600, step=10)
             st.caption(_HELP["sqft"])
-            dist_elevator = st.number_input("Distance to Elevator Bank (seconds)", min_value=0, max_value=300, value=30, step=1)
+        with c5:
+            dist_elevator = st.number_input("Distance to Elevator (sec)", min_value=0, max_value=300, value=30, step=1)
             st.caption(_HELP["elevator"])
         with c6:
-            dist_cafeteria = st.number_input("Distance to Cafeteria (seconds)", min_value=0, max_value=1000, value=55, step=1)
+            dist_cafeteria = st.number_input("Distance to Cafeteria (sec)", min_value=0, max_value=1000, value=55, step=1)
             st.caption(_HELP["cafeteria"])
 
         st.markdown("<div style='height:4px'></div>", unsafe_allow_html=True)
@@ -81,7 +65,7 @@ def render(artifacts: tuple) -> None:
         payroll_ded = 1 if payroll_ded_bool else 0
         inputs = dict(
             staffed_beds=staffed_beds, adc=adc,
-            giftshop_sqft=giftshop_sqft, affiliation=affiliation,
+            giftshop_sqft=giftshop_sqft, affiliation="Other / New System",
             hospital_type=hospital_type, payroll_ded=payroll_ded,
             dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
         )
@@ -311,6 +295,7 @@ def _render_actions(
     shap_drivers: dict, shap_base: float,
 ) -> None:
     label = hospital_name.strip() or "Unnamed Hospital"
+    st.markdown('<div class="forecast-actions-section">', unsafe_allow_html=True)
     _divider()
     st.markdown(
         "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:10px;'>"
@@ -345,6 +330,8 @@ def _render_actions(
         if st.button("Print", width="stretch",
                      help="Open the browser print dialog for this page."):
             st.session_state["trigger_print"] = True
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
     if st.session_state.pop("trigger_print", False):
         import time
