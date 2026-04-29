@@ -199,7 +199,7 @@ st.markdown(
 
       /* ── Print styles ── */
       @media print {
-        /* Hide everything that isn't the main content */
+        /* Hide chrome, sidebar, tabs, and action buttons */
         [data-testid="stSidebar"],
         [data-testid="stHeader"],
         [data-testid="stToolbar"],
@@ -210,24 +210,47 @@ st.markdown(
         footer,
         #MainMenu { display: none !important; }
 
-        /* Remove gray page background */
-        .stApp, html, body { background: white !important; }
+        /* Hide the input form — only print the forecast results */
+        [data-testid="stForm"] { display: none !important; }
 
-        /* Remove padding so content fills the page */
-        .block-container {
-          padding: 0 !important;
-          max-width: 100% !important;
+        /* Hide Save/Export/Print actions section */
+        .forecast-actions-section { display: none !important; }
+        [data-testid="stDownloadButton"],
+        [data-testid="stButton"] { display: none !important; }
+
+        /* Remove all height/overflow constraints so content flows freely */
+        html, body, .stApp,
+        section[data-testid="stMain"],
+        .block-container,
+        [data-testid="stAppViewContainer"],
+        [data-testid="stVerticalBlock"] {
+          height: auto !important;
+          max-height: none !important;
+          overflow: visible !important;
         }
 
-        /* Make the main content fill the full width */
+        /* White background, no padding */
+        .stApp, html, body { background: white !important; }
+        .block-container {
+          padding: 0.5rem 1rem !important;
+          max-width: 100% !important;
+        }
         section[data-testid="stMain"] {
           width: 100% !important;
           margin: 0 !important;
           padding: 0 !important;
         }
 
-        /* Hide the entire Save/Export/Print actions section when printing */
-        .forecast-actions-section { display: none !important; }
+        /* Let iframes (hero card) expand to their content height */
+        iframe {
+          height: auto !important;
+          min-height: 148px;
+        }
+
+        /* Avoid breaking inside key blocks */
+        [data-testid="stMetric"],
+        [data-testid="stPlotlyChart"],
+        .stMarkdown { page-break-inside: avoid; }
       }
 
       /* Success/info banners */
