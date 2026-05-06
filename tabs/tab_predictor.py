@@ -275,7 +275,8 @@ def _build_print_html(
 
         rect_x = center + 3 if is_pos else center - 3 - bar_px
         svg = (
-            f'<svg width="{chart_w}" height="{row_h}" style="display:block;overflow:visible;">'
+            f'<svg viewBox="0 0 {chart_w} {row_h}" width="100%" height="{row_h}" '
+            f'preserveAspectRatio="none" style="display:block;overflow:visible;">'
             f'<line x1="{center}" y1="0" x2="{center}" y2="{row_h}" stroke="#CBD5E1" stroke-width="2"/>'
             f'<rect x="{rect_x}" y="{bar_top}" width="{bar_px}" height="{bar_h}" fill="{color}" rx="3"/>'
             f'</svg>'
@@ -284,10 +285,10 @@ def _build_print_html(
         shap_rows_html += (
             f'<tr>'
             f'<td style="text-align:right;padding:0 10px 0 0;font-size:12px;'
-            f'color:#334155;white-space:nowrap;width:38%;height:{row_h}px;">{name}</td>'
-            f'<td style="padding:0;width:{chart_w}px;">{svg}</td>'
+            f'color:#334155;white-space:nowrap;width:160px;height:{row_h}px;">{name}</td>'
+            f'<td style="padding:0;">{svg}</td>'
             f'<td style="padding:0 0 0 10px;font-size:12px;font-weight:700;'
-            f'color:{text_color};white-space:nowrap;">{dollar_lbl}</td>'
+            f'color:{text_color};white-space:nowrap;width:90px;">{dollar_lbl}</td>'
             f'</tr>'
         )
 
@@ -312,7 +313,7 @@ def _build_print_html(
       &larr; Decreases forecast &nbsp;|&nbsp; Increases forecast &rarr;
     </div>
     {legend_html}
-    <table style="border-collapse:collapse;margin:0 auto;">{shap_rows_html}</table>
+    <table style="border-collapse:collapse;width:100%;">{shap_rows_html}</table>
     """
 
     # ── Inputs table ─────────────────────────────────────────────────────────
