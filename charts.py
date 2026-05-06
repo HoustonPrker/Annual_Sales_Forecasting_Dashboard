@@ -92,7 +92,7 @@ def prediction_accuracy_chart() -> go.Figure:
     try:
         _df = pd.read_csv(_csv)[["Store", "Actual_Annual", "Predicted_Annual"]].copy()
         _df.columns = ["Store", "Actual", "ML_Predicted"]
-    except FileNotFoundError:
+    except (FileNotFoundError, KeyError):
         _df = pd.DataFrame({"Store": [], "Actual": [], "ML_Predicted": []})
 
     # Excel baseline predictions (unchanged reference for comparison)

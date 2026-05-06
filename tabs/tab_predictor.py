@@ -18,8 +18,7 @@ _HOSP_TYPES = ["Community", "Specialty", "Academic"]
 
 
 def render(artifacts: tuple) -> None:
-    cfg        = artifacts[0]
-    summary_df = artifacts[6]
+    cfg = artifacts[0]
 
     st.markdown("## Revenue Forecast")
 
@@ -105,7 +104,6 @@ def render(artifacts: tuple) -> None:
     _render_hero(result)
     _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
-    _render_comparable_stores(summary_df, fc["adc"], fc["staffed_beds"])
     _render_technical_details(
         fc["inputs"]["staffed_beds"], fc["inputs"]["adc"],
         fc["inputs"]["giftshop_sqft"],
@@ -218,67 +216,6 @@ def _render_impact(result: dict, cfg: dict) -> None:
     st.plotly_chart(fig, width='stretch')
     _divider()
 
-
-def _render_comparable_stores(summary_df, adc: float, staffed_beds: float) -> None:
-    if summary_df.empty or "log_adc" not in summary_df.columns:
-        return
-    st.markdown(
-        "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:4px;'>"
-        "Similar Hospitals in Our Network</p>",
-        unsafe_allow_html=True,
-    )
-    comp = summary_df.copy()
-    comp["_dist"] = (
-        (comp["log_adc"]  - safe_log(adc)).abs()
-        + (comp["log_beds"] - safe_log(staffed_beds)).abs()
-    )
-    comp = comp.nsmallest(5, "_dist").copy()
-    comp["Similarity"] = comp["_dist"].apply(lambda d: f"{max(0, round(100 - d * 28))}%")
-    comp = comp[["Store", "Hospital Name", "annualized_revenue", "Similarity"]].rename(columns={
-        "Store":              "Store #",
-        "Hospital Name":      "Hospital",
-        "annualized_revenue": "Annual Revenue",
-    })
-    comp["Annual Revenue"] = comp["Annual Revenue"].map("${:,.0f}".format)
-
-    rows = "".join(
-        f"<tr>"
-        f"<td style='text-align:center'>{row['Store #']}</td>"
-        f"<td style='text-align:left'>{row['Hospital']}</td>"
-        f"<td style='text-align:center'>{row['Annual Revenue']}</td>"
-        f"<td style='text-align:center'>{row['Similarity']}</td>"
-        f"</tr>"
-        for _, row in comp.iterrows()
-    )
-    st.markdown(
-        f"""
-        <table style="width:100%; border-collapse:collapse; font-size:14px;
-                      font-family:Inter,Segoe UI,sans-serif; color:#1E293B;">
-          <thead>
-            <tr style="border-bottom:2px solid #E2E8F0;">
-              <th style="text-align:center; padding:10px 12px; font-weight:600;
-                         color:#64748B; font-size:12px; text-transform:uppercase;
-                         letter-spacing:.05em;">Store #</th>
-              <th style="text-align:left; padding:10px 12px; font-weight:600;
-                         color:#64748B; font-size:12px; text-transform:uppercase;
-                         letter-spacing:.05em;">Hospital</th>
-              <th style="text-align:center; padding:10px 12px; font-weight:600;
-                         color:#64748B; font-size:12px; text-transform:uppercase;
-                         letter-spacing:.05em;">Annual Revenue</th>
-              <th style="text-align:center; padding:10px 12px; font-weight:600;
-                         color:#64748B; font-size:12px; text-transform:uppercase;
-                         letter-spacing:.05em;">Similarity</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.replace("<tr>", '<tr style="border-bottom:1px solid #F1F5F9;">')}
-          </tbody>
-        </table>
-        <div style="height:8px"></div>
-        """,
-        unsafe_allow_html=True,
-    )
-    _divider()
 
 
 def _render_technical_details(beds, adc, sqft):

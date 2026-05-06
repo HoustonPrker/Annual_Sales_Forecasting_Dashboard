@@ -28,6 +28,11 @@ def load_artifacts():
     ridge     = joblib.load(os.path.join(MODEL_DIR, "prod_ridge.joblib"))
     enet      = joblib.load(os.path.join(MODEL_DIR, "prod_enet.joblib"))
     explainer = joblib.load(os.path.join(MODEL_DIR, "shap_explainer.joblib"))
+
+    # Store the SHAP base value (expected log-revenue) from the explainer so that
+    # dollar-impact calculations are accurate. Falls back to 0 if unavailable.
+    base = getattr(explainer, "expected_value", 0.0)
+    cfg["shap_base_value"] = float(np.asarray(base).flat[0])
     def _read_csv_optional(path: str, **kwargs) -> pd.DataFrame:
         try:
             return pd.read_csv(path, **kwargs)
@@ -108,7 +113,7 @@ def predict_12_months(artifacts: tuple, inputs: dict) -> dict:
     shap_row  = feature_rows[5]
     shap_vals = explainer.shap_values(shap_row)
     if isinstance(shap_vals, list):
-        shap_vals = shap_vals[0]
+        shap_vals = shap_vals[0] if shap_vals else np.zeros(len(cfg["features"]))
 
     total = sum(monthly_revenue)
     rs    = cfg["residual_shifts"]
