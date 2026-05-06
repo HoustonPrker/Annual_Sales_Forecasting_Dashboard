@@ -102,7 +102,6 @@ def render(artifacts: tuple) -> None:
     hospital_name = fc["hospital_name"]
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
-    _render_print_header(hospital_name, inputs)
     _render_hero(result)
     _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
@@ -112,7 +111,7 @@ def render(artifacts: tuple) -> None:
         fc["inputs"]["giftshop_sqft"],
     )
     _render_actions(hospital_name, inputs, result,
-                    fc.get("shap_drivers", {}), fc.get("shap_base", 0.0))
+                    fc.get("shap_drivers", {}), fc.get("shap_base", 0.0), cfg)
 
 
 # ── Section helpers ───────────────────────────────────────────────────────────
@@ -172,56 +171,6 @@ def _card_html(lo: float, mid: float, hi: float) -> str:
     </body></html>
     """
 
-
-def _render_print_header(hospital_name: str, inputs: dict) -> None:
-    label = hospital_name.strip() or "Unnamed Hospital"
-    hosp_type  = inputs.get("hospital_type", "—")
-    affil      = inputs.get("affiliation", "—")
-    beds       = inputs.get("staffed_beds", "—")
-    adc        = inputs.get("adc", "—")
-    sqft       = inputs.get("giftshop_sqft", "—")
-    elevator   = inputs.get("dist_elevator", "—")
-    cafeteria  = inputs.get("dist_cafeteria", "—")
-    payroll    = "Yes" if inputs.get("payroll_ded") else "No"
-
-    st.markdown(
-        f"""
-        <div class="print-header">
-          <div style="font-size:22px; font-weight:800; color:#1E3A5F; margin-bottom:2px;">{label}</div>
-          <div style="font-size:13px; color:#64748B; margin-bottom:16px;">Gift Shop Revenue Forecast — Cloverkey</div>
-          <table style="width:100%; border-collapse:collapse; font-size:13px; color:#334155;">
-            <tr>
-              <td style="padding:4px 16px 4px 0;"><b>Hospital Type</b></td><td style="padding:4px 24px 4px 0;">{hosp_type}</td>
-              <td style="padding:4px 16px 4px 0;"><b>Health System</b></td><td style="padding:4px 0;">{affil}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 16px 4px 0;"><b>Staffed Beds</b></td><td style="padding:4px 24px 4px 0;">{beds:,}</td>
-              <td style="padding:4px 16px 4px 0;"><b>Avg Daily Census (ADC)</b></td><td style="padding:4px 0;">{adc:,}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 16px 4px 0;"><b>Gift Shop Sq Ft</b></td><td style="padding:4px 24px 4px 0;">{sqft:,}</td>
-              <td style="padding:4px 16px 4px 0;"><b>Payroll Deduction</b></td><td style="padding:4px 0;">{payroll}</td>
-            </tr>
-            <tr>
-              <td style="padding:4px 16px 4px 0;"><b>Distance to Elevator</b></td><td style="padding:4px 24px 4px 0;">{elevator}s walk</td>
-              <td style="padding:4px 16px 4px 0;"><b>Distance to Cafeteria</b></td><td style="padding:4px 0;">{cafeteria}s walk</td>
-            </tr>
-          </table>
-          <div style="height:1px; background:#E2E8F0; margin:14px 0;"></div>
-        </div>
-        <style>
-          /* On screen: only show hospital name, hide the full input table */
-          .print-header table {{ display: none; }}
-          .print-header > div:nth-child(2) {{ display: none; }}
-          /* On print: show everything */
-          @media print {{
-            .print-header table {{ display: table !important; }}
-            .print-header > div:nth-child(2) {{ display: block !important; }}
-          }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
 
 
 def _render_hero(result: dict) -> None:
@@ -342,12 +291,128 @@ def _render_technical_details(beds, adc, sqft):
         c1.metric("log(ADC)",          f"{safe_log(adc):.3f}")
 
 
+def _build_print_html(
+    hospital_name: str, inputs: dict, result: dict, cfg: dict,
+) -> str:
+    import base64, plotly.io as pio
+    from charts import revenue_chart, shap_impact_chart
+
+    label   = hospital_name.strip() or "Unnamed Hospital"
+    lo, mid, hi = result["conservative"], result["accurate"], result["optimistic"]
+
+    fig_monthly = revenue_chart(result["monthly_revenue"], result["monthly_labels"],
+                                cfg["residual_shifts"])
+    fig_shap    = shap_impact_chart(cfg["features"], result["shap_values"],
+                                    cfg.get("shap_base_value", 0.0))
+
+    # Update chart heights for the print page
+    fig_monthly.update_layout(height=320, margin=dict(t=16, b=48, l=16, r=16))
+    fig_shap.update_layout(height=420, margin=dict(t=16, b=56, l=200, r=120))
+
+    monthly_div = pio.to_html(fig_monthly, full_html=False, include_plotlyjs=False)
+    shap_div    = pio.to_html(fig_shap,    full_html=False, include_plotlyjs=False)
+
+    beds      = inputs.get("staffed_beds", "—")
+    adc       = inputs.get("adc", "—")
+    sqft      = inputs.get("giftshop_sqft", "—")
+    elevator  = inputs.get("dist_elevator", "—")
+    cafeteria = inputs.get("dist_cafeteria", "—")
+    hosp_type = inputs.get("hospital_type", "—")
+    affil     = inputs.get("affiliation", "—")
+    payroll   = "Yes" if inputs.get("payroll_ded") else "No"
+
+    def _fmt(v):
+        try:
+            return f"{int(v):,}"
+        except Exception:
+            return str(v)
+
+    rows_html = f"""
+      <tr><td class="lbl">Hospital Type</td><td class="val">{hosp_type}</td>
+          <td class="lbl">Health System</td><td class="val">{affil}</td></tr>
+      <tr><td class="lbl">Staffed Beds</td><td class="val">{_fmt(beds)}</td>
+          <td class="lbl">Avg Daily Census (ADC)</td><td class="val">{_fmt(adc)}</td></tr>
+      <tr><td class="lbl">Gift Shop Sq Ft</td><td class="val">{_fmt(sqft)}</td>
+          <td class="lbl">Payroll Deduction</td><td class="val">{payroll}</td></tr>
+      <tr><td class="lbl">Distance to Elevator</td><td class="val">{elevator}s walk</td>
+          <td class="lbl">Distance to Cafeteria</td><td class="val">{cafeteria}s walk</td></tr>
+    """
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{label} — Revenue Forecast</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * {{ box-sizing:border-box; margin:0; padding:0; }}
+  body {{ font-family:'Inter',sans-serif; color:#1E293B; padding:32px 40px; background:#fff; }}
+  h1 {{ font-size:28px; font-weight:800; color:#1E3A5F; margin-bottom:3px; }}
+  .subtitle {{ font-size:13px; color:#64748B; margin-bottom:18px; }}
+  table.inputs {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; }}
+  table.inputs td {{ padding:5px 12px; }}
+  td.lbl {{ font-weight:700; color:#475569; padding-left:40px; width:22%; }}
+  td.val {{ color:#1E293B; width:28%; }}
+  .divider {{ height:1px; background:#E2E8F0; margin:18px 0; }}
+  .section-title {{ font-size:15px; font-weight:700; color:#1E3A5F; margin:18px 0 10px; }}
+  .cards {{ display:flex; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; margin-bottom:16px; }}
+  .card {{ flex:1; padding:18px; text-align:center; }}
+  .card.mid {{ flex:1.35; border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0; background:#F8FAFF; }}
+  .clbl {{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; margin-bottom:7px; }}
+  .cval {{ font-weight:800; line-height:1; }}
+  .csub {{ font-size:11px; color:#94A3B8; margin-top:5px; }}
+  @media print {{ @page {{ margin:0.5in; size:portrait; }} body {{ padding:0; }} }}
+</style>
+</head>
+<body>
+<h1>{label}</h1>
+<div class="subtitle">Gift Shop Revenue Forecast &mdash; Cloverkey</div>
+
+<table class="inputs">{rows_html}</table>
+<div class="divider"></div>
+
+<div class="section-title">First-Year Revenue Projections</div>
+<div class="cards">
+  <div class="card">
+    <div class="clbl" style="color:#B45309;">Conservative</div>
+    <div class="cval" style="font-size:26px;color:#92400E;">${lo:,.0f}</div>
+    <div class="csub">Lower bound</div>
+  </div>
+  <div class="card mid">
+    <div class="clbl" style="color:#1D4ED8;">Most Likely</div>
+    <div class="cval" style="font-size:36px;color:#1E3A5F;">${mid:,.0f}</div>
+    <div class="csub">Best estimate</div>
+  </div>
+  <div class="card">
+    <div class="clbl" style="color:#15803D;">Optimistic</div>
+    <div class="cval" style="font-size:26px;color:#14532D;">${hi:,.0f}</div>
+    <div class="csub">Upper bound</div>
+  </div>
+</div>
+
+<div class="section-title">Monthly Revenue Forecast</div>
+{monthly_div}
+
+<div class="section-title">What's Driving This Forecast?</div>
+{shap_div}
+
+<script>
+  window.onload = function() {{
+    setTimeout(function() {{ window.print(); }}, 800);
+  }};
+</script>
+</body>
+</html>"""
+
+    return html
+
+
 def _render_actions(
     hospital_name: str, inputs: dict, result: dict,
-    shap_drivers: dict, shap_base: float,
+    shap_drivers: dict, shap_base: float, cfg: dict,
 ) -> None:
     label = hospital_name.strip() or "Unnamed Hospital"
-    st.markdown('<div class="forecast-actions-section">', unsafe_allow_html=True)
     _divider()
     st.markdown(
         "<p style='font-size:18px; font-weight:700; color:#1E3A5F; margin-bottom:10px;'>"
@@ -380,28 +445,23 @@ def _render_actions(
 
     with col_print:
         if st.button("Print", width="stretch",
-                     help="Open the browser print dialog for this page."):
+                     help="Opens a clean printable report in a new tab."):
             st.session_state["trigger_print"] = True
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
     if st.session_state.pop("trigger_print", False):
-        import time
+        import base64, time
+        html  = _build_print_html(hospital_name, inputs, result, cfg)
+        b64   = base64.b64encode(html.encode("utf-8")).decode("ascii")
         nonce = int(time.time() * 1000)
         st.html(
             f"""<script>
             (function(){{
                 /* nonce:{nonce} */
-                var win = window.parent;
-                // Scroll to bottom so Streamlit lazy-renders all off-screen content,
-                // then scroll back to top, then wait for charts to finish rendering.
-                win.scrollTo(0, win.document.body.scrollHeight);
-                setTimeout(function() {{
-                    win.scrollTo(0, 0);
-                    setTimeout(function() {{
-                        win.print();
-                    }}, 1200);
-                }}, 600);
+                var b64 = "{b64}";
+                var bytes = Uint8Array.from(atob(b64), function(c){{ return c.charCodeAt(0); }});
+                var blob  = new Blob([bytes], {{type: "text/html"}});
+                var url   = URL.createObjectURL(blob);
+                window.parent.open(url, "_blank");
             }})();
             </script>""",
             unsafe_allow_javascript=True,
