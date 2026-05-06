@@ -258,8 +258,8 @@ def _build_print_html(
     max_abs = max(abs(v) for _, v in rows) if rows else 1.0
 
     # SVG-based bars — SVG fill always prints; background-color is stripped by browsers
-    chart_w  = 280   # px width of the SVG bar area
-    row_h    = 32    # px height per row (gives breathing room)
+    chart_w  = 400   # px — wider to fill the page
+    row_h    = 30    # px height per row
     bar_h    = 20    # px height of each bar
     bar_top  = (row_h - bar_h) // 2
     center   = chart_w // 2
@@ -379,9 +379,9 @@ def _build_print_html(
       #ck-print .csub { font-size:11px; color:#94A3B8; margin-top:5px; }
       @media print {
         -webkit-print-color-adjust: exact; print-color-adjust: exact;
-        @page { margin:0.5in; }
+        @page { margin:0; size:letter portrait; }
         body > *:not(#ck-print) { display:none !important; }
-        #ck-print { display:block !important; padding:0; }
+        #ck-print { display:block !important; padding:24px 36px; }
       }
     """
 
@@ -408,7 +408,6 @@ def _build_print_html(
     <div class="csub">Upper bound</div>
   </div>
 </div>
-<div class="section-title">What's Driving This Forecast?</div>
 {shap_section}
 """
 
