@@ -232,22 +232,29 @@ def _build_print_html(
     hospital_name: str, inputs: dict, result: dict, cfg: dict,
 ) -> str:
     import base64, plotly.io as pio
-    from charts import revenue_chart, shap_impact_chart
+    from charts import shap_impact_chart
 
     label   = hospital_name.strip() or "Unnamed Hospital"
     lo, mid, hi = result["conservative"], result["accurate"], result["optimistic"]
 
-    fig_monthly = revenue_chart(result["monthly_revenue"], result["monthly_labels"],
-                                cfg["residual_shifts"])
-    fig_shap    = shap_impact_chart(cfg["features"], result["shap_values"],
-                                    cfg.get("shap_base_value", 0.0))
+    fig_shap = shap_impact_chart(cfg["features"], result["shap_values"],
+                                 cfg.get("shap_base_value", 0.0))
 
-    # Update chart heights for the print page
-    fig_monthly.update_layout(height=320, margin=dict(t=16, b=48, l=16, r=16))
-    fig_shap.update_layout(height=420, margin=dict(t=16, b=56, l=200, r=120))
+    # SHAP chart: symmetric axis around 0 so diverging bars read correctly
+    shap_vals_flat = list(result["shap_values"])
+    max_abs = max(abs(v) for v in shap_vals_flat) if shap_vals_flat else 1.0
+    axis_range = [-max_abs * 1.35, max_abs * 1.35]
+    fig_shap.update_layout(
+        height=440,
+        margin=dict(t=16, b=16, l=210, r=130),
+        xaxis=dict(range=axis_range, zeroline=False, showticklabels=False,
+                   title=dict(text="← Decreases forecast  |  Increases forecast →",
+                              font=dict(size=12, color="#64748B"))),
+        legend=dict(orientation="h", y=-0.06, x=0.5, xanchor="center",
+                    font=dict(size=12), bgcolor="rgba(0,0,0,0)"),
+    )
 
-    monthly_div = pio.to_html(fig_monthly, full_html=False, include_plotlyjs=False)
-    shap_div    = pio.to_html(fig_shap,    full_html=False, include_plotlyjs=False)
+    shap_div = pio.to_html(fig_shap, full_html=False, include_plotlyjs=False)
 
     beds      = inputs.get("staffed_beds", "—")
     adc       = inputs.get("adc", "—")
@@ -264,15 +271,24 @@ def _build_print_html(
         except Exception:
             return str(v)
 
+    # Table rows with a visible border between each row for easy reading
     rows_html = f"""
-      <tr><td class="lbl">Hospital Type</td><td class="val">{hosp_type}</td>
-          <td class="lbl">Health System</td><td class="val">{affil}</td></tr>
-      <tr><td class="lbl">Staffed Beds</td><td class="val">{_fmt(beds)}</td>
-          <td class="lbl">Avg Daily Census (ADC)</td><td class="val">{_fmt(adc)}</td></tr>
-      <tr><td class="lbl">Gift Shop Sq Ft</td><td class="val">{_fmt(sqft)}</td>
-          <td class="lbl">Payroll Deduction</td><td class="val">{payroll}</td></tr>
-      <tr><td class="lbl">Distance to Elevator</td><td class="val">{elevator}s walk</td>
-          <td class="lbl">Distance to Cafeteria</td><td class="val">{cafeteria}s walk</td></tr>
+      <tr class="trow">
+        <td class="lbl">Hospital Type</td><td class="val">{hosp_type}</td>
+        <td class="lbl">Health System</td><td class="val">{affil}</td>
+      </tr>
+      <tr class="trow">
+        <td class="lbl">Staffed Beds</td><td class="val">{_fmt(beds)}</td>
+        <td class="lbl">Avg Daily Census (ADC)</td><td class="val">{_fmt(adc)}</td>
+      </tr>
+      <tr class="trow">
+        <td class="lbl">Gift Shop Sq Ft</td><td class="val">{_fmt(sqft)}</td>
+        <td class="lbl">Payroll Deduction</td><td class="val">{payroll}</td>
+      </tr>
+      <tr class="trow">
+        <td class="lbl">Distance to Elevator</td><td class="val">{elevator}s walk</td>
+        <td class="lbl">Distance to Cafeteria</td><td class="val">{cafeteria}s walk</td>
+      </tr>
     """
 
     html = f"""<!DOCTYPE html>
@@ -287,10 +303,19 @@ def _build_print_html(
   body {{ font-family:'Inter',sans-serif; color:#1E293B; padding:32px 40px; background:#fff; }}
   h1 {{ font-size:28px; font-weight:800; color:#1E3A5F; margin-bottom:3px; }}
   .subtitle {{ font-size:13px; color:#64748B; margin-bottom:18px; }}
-  table.inputs {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px; }}
-  table.inputs td {{ padding:5px 12px; }}
-  td.lbl {{ font-weight:700; color:#475569; padding-left:40px; width:22%; }}
-  td.val {{ color:#1E293B; width:28%; }}
+
+  /* Inputs table with row dividers */
+  table.inputs {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px;
+                  border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; }}
+  tr.trow {{ border-bottom:1px solid #E2E8F0; }}
+  tr.trow:last-child {{ border-bottom:none; }}
+  tr.trow:nth-child(odd) {{ background:#F8FAFC; }}
+  table.inputs td {{ padding:8px 14px; }}
+  td.lbl {{ font-weight:700; color:#475569; padding-left:20px; width:22%;
+            border-right:1px solid #E2E8F0; }}
+  td.val {{ color:#1E293B; width:28%; border-right:1px solid #E2E8F0; }}
+  td.val:last-child {{ border-right:none; }}
+
   .divider {{ height:1px; background:#E2E8F0; margin:18px 0; }}
   .section-title {{ font-size:15px; font-weight:700; color:#1E3A5F; margin:18px 0 10px; }}
   .cards {{ display:flex; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; margin-bottom:16px; }}
@@ -327,9 +352,6 @@ def _build_print_html(
     <div class="csub">Upper bound</div>
   </div>
 </div>
-
-<div class="section-title">Monthly Revenue Forecast</div>
-{monthly_div}
 
 <div class="section-title">What's Driving This Forecast?</div>
 {shap_div}
