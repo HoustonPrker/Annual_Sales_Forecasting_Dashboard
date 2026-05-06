@@ -258,13 +258,16 @@ def _build_print_html(
     max_abs = max(abs(v) for _, v in rows) if rows else 1.0
 
     # SVG-based bars — SVG fill always prints; background-color is stripped by browsers
-    chart_w = 260   # px width of the SVG bar area
-    center  = chart_w // 2
+    chart_w  = 280   # px width of the SVG bar area
+    row_h    = 32    # px height per row (gives breathing room)
+    bar_h    = 20    # px height of each bar
+    bar_top  = (row_h - bar_h) // 2
+    center   = chart_w // 2
 
     shap_rows_html = ""
     for feat, val in rows:
         name       = FEATURE_LABELS.get(feat, feat)
-        bar_px     = max(2, int(abs(val) / max_abs * (center - 8)))
+        bar_px     = max(3, int(abs(val) / max_abs * (center - 10)))
         dollar_lbl = _dollar_impact(val)
         is_pos     = val >= 0
         color      = "#EF4444" if is_pos else "#3B82F6"
@@ -272,33 +275,43 @@ def _build_print_html(
 
         rect_x = center + 3 if is_pos else center - 3 - bar_px
         svg = (
-            f'<svg width="{chart_w}" height="22" style="display:block;overflow:visible;">'
-            f'<line x1="{center}" y1="0" x2="{center}" y2="22" stroke="#CBD5E1" stroke-width="2"/>'
-            f'<rect x="{rect_x}" y="3" width="{bar_px}" height="16" fill="{color}" rx="2"/>'
+            f'<svg width="{chart_w}" height="{row_h}" style="display:block;overflow:visible;">'
+            f'<line x1="{center}" y1="0" x2="{center}" y2="{row_h}" stroke="#CBD5E1" stroke-width="2"/>'
+            f'<rect x="{rect_x}" y="{bar_top}" width="{bar_px}" height="{bar_h}" fill="{color}" rx="3"/>'
             f'</svg>'
         )
 
         shap_rows_html += (
             f'<tr>'
-            f'<td style="text-align:right;padding:2px 8px 2px 0;font-size:12px;'
-            f'color:#334155;white-space:nowrap;width:38%;">{name}</td>'
-            f'<td style="padding:2px 0;width:{chart_w}px;">{svg}</td>'
-            f'<td style="padding:2px 0 2px 8px;font-size:11px;font-weight:700;'
+            f'<td style="text-align:right;padding:0 10px 0 0;font-size:12px;'
+            f'color:#334155;white-space:nowrap;width:38%;height:{row_h}px;">{name}</td>'
+            f'<td style="padding:0;width:{chart_w}px;">{svg}</td>'
+            f'<td style="padding:0 0 0 10px;font-size:12px;font-weight:700;'
             f'color:{text_color};white-space:nowrap;">{dollar_lbl}</td>'
             f'</tr>'
         )
 
+    # Legend: use a table row so swatch and label stay on the same line reliably
+    legend_html = (
+        f'<table style="border-collapse:collapse;margin:0 auto 10px;">'
+        f'<tr>'
+        f'<td style="padding:0 6px 0 0;">'
+        f'<svg width="14" height="14"><rect width="14" height="14" fill="#3B82F6" rx="2"/></svg>'
+        f'</td>'
+        f'<td style="font-size:12px;color:#334155;padding-right:20px;">Decreases forecast</td>'
+        f'<td style="padding:0 6px 0 0;">'
+        f'<svg width="14" height="14"><rect width="14" height="14" fill="#EF4444" rx="2"/></svg>'
+        f'</td>'
+        f'<td style="font-size:12px;color:#334155;">Increases forecast</td>'
+        f'</tr>'
+        f'</table>'
+    )
+
     shap_section = f"""
-    <div style="text-align:center;margin-bottom:6px;font-size:11px;color:#94A3B8;">
+    <div style="text-align:center;margin-bottom:8px;font-size:11px;color:#94A3B8;">
       &larr; Decreases forecast &nbsp;|&nbsp; Increases forecast &rarr;
     </div>
-    <div style="text-align:center;margin-bottom:12px;font-size:12px;color:#334155;">
-      <svg width="12" height="12" style="vertical-align:middle;margin-right:4px;">
-        <rect width="12" height="12" fill="#3B82F6" rx="2"/></svg>Decreases forecast
-      &nbsp;&nbsp;
-      <svg width="12" height="12" style="vertical-align:middle;margin-right:4px;">
-        <rect width="12" height="12" fill="#EF4444" rx="2"/></svg>Increases forecast
-    </div>
+    {legend_html}
     <table style="border-collapse:collapse;margin:0 auto;">{shap_rows_html}</table>
     """
 
