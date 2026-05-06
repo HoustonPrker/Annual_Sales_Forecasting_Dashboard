@@ -241,16 +241,26 @@ st.markdown(
           padding: 0 !important;
         }
 
-        /* Let iframes (hero card) expand to their content height */
-        iframe {
-          height: auto !important;
-          min-height: 148px;
+        /* Force colors to print (browsers suppress backgrounds by default) */
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+
+        /* Hero card iframe */
+        iframe { height: auto !important; min-height: 148px; }
+
+        /* Give Plotly chart iframes a fixed height so they render fully */
+        [data-testid="stPlotlyChart"] iframe {
+          height: 400px !important;
+          min-height: 400px !important;
+          max-height: 400px !important;
         }
 
         /* Avoid breaking inside key blocks */
         [data-testid="stMetric"],
         [data-testid="stPlotlyChart"],
-        .stMarkdown { page-break-inside: avoid; }
+        .stMarkdown { page-break-inside: avoid; break-inside: avoid; }
+
+        /* Allow page breaks between sections */
+        [data-testid="stVerticalBlock"] > div { page-break-inside: auto; }
       }
 
       /* Success/info banners */

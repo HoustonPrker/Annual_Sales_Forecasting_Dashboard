@@ -102,6 +102,7 @@ def render(artifacts: tuple) -> None:
     hospital_name = fc["hospital_name"]
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
+    _render_print_header(hospital_name, inputs)
     _render_hero(result)
     _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
@@ -170,6 +171,57 @@ def _card_html(lo: float, mid: float, hi: float) -> str:
       </div>
     </body></html>
     """
+
+
+def _render_print_header(hospital_name: str, inputs: dict) -> None:
+    label = hospital_name.strip() or "Unnamed Hospital"
+    hosp_type  = inputs.get("hospital_type", "—")
+    affil      = inputs.get("affiliation", "—")
+    beds       = inputs.get("staffed_beds", "—")
+    adc        = inputs.get("adc", "—")
+    sqft       = inputs.get("giftshop_sqft", "—")
+    elevator   = inputs.get("dist_elevator", "—")
+    cafeteria  = inputs.get("dist_cafeteria", "—")
+    payroll    = "Yes" if inputs.get("payroll_ded") else "No"
+
+    st.markdown(
+        f"""
+        <div class="print-header">
+          <div style="font-size:22px; font-weight:800; color:#1E3A5F; margin-bottom:2px;">{label}</div>
+          <div style="font-size:13px; color:#64748B; margin-bottom:16px;">Gift Shop Revenue Forecast — Cloverkey</div>
+          <table style="width:100%; border-collapse:collapse; font-size:13px; color:#334155;">
+            <tr>
+              <td style="padding:4px 16px 4px 0;"><b>Hospital Type</b></td><td style="padding:4px 24px 4px 0;">{hosp_type}</td>
+              <td style="padding:4px 16px 4px 0;"><b>Health System</b></td><td style="padding:4px 0;">{affil}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 16px 4px 0;"><b>Staffed Beds</b></td><td style="padding:4px 24px 4px 0;">{beds:,}</td>
+              <td style="padding:4px 16px 4px 0;"><b>Avg Daily Census (ADC)</b></td><td style="padding:4px 0;">{adc:,}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 16px 4px 0;"><b>Gift Shop Sq Ft</b></td><td style="padding:4px 24px 4px 0;">{sqft:,}</td>
+              <td style="padding:4px 16px 4px 0;"><b>Payroll Deduction</b></td><td style="padding:4px 0;">{payroll}</td>
+            </tr>
+            <tr>
+              <td style="padding:4px 16px 4px 0;"><b>Distance to Elevator</b></td><td style="padding:4px 24px 4px 0;">{elevator}s walk</td>
+              <td style="padding:4px 16px 4px 0;"><b>Distance to Cafeteria</b></td><td style="padding:4px 0;">{cafeteria}s walk</td>
+            </tr>
+          </table>
+          <div style="height:1px; background:#E2E8F0; margin:14px 0;"></div>
+        </div>
+        <style>
+          /* On screen: only show hospital name, hide the full input table */
+          .print-header table {{ display: none; }}
+          .print-header > div:nth-child(2) {{ display: none; }}
+          /* On print: show everything */
+          @media print {{
+            .print-header table {{ display: table !important; }}
+            .print-header > div:nth-child(2) {{ display: block !important; }}
+          }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def _render_hero(result: dict) -> None:
