@@ -257,53 +257,49 @@ def _build_print_html(
     rows = sorted(zip(features, shap_vals), key=lambda x: x[1])
     max_abs = max(abs(v) for _, v in rows) if rows else 1.0
 
+    # SVG-based bars — SVG fill always prints; background-color is stripped by browsers
+    chart_w = 260   # px width of the SVG bar area
+    center  = chart_w // 2
+
     shap_rows_html = ""
     for feat, val in rows:
-        name        = FEATURE_LABELS.get(feat, feat)
-        pct         = abs(val) / max_abs * 46   # max 46% of half-width
-        dollar_lbl  = _dollar_impact(val)
-        is_positive = val >= 0
-        color       = "#EF4444" if is_positive else "#3B82F6"
-        text_color  = "#B91C1C" if is_positive else "#1D4ED8"
+        name       = FEATURE_LABELS.get(feat, feat)
+        bar_px     = max(2, int(abs(val) / max_abs * (center - 8)))
+        dollar_lbl = _dollar_impact(val)
+        is_pos     = val >= 0
+        color      = "#EF4444" if is_pos else "#3B82F6"
+        text_color = "#B91C1C" if is_pos else "#1D4ED8"
 
-        if is_positive:
-            bar_html = (
-                f'<div style="width:50%;text-align:right;padding-right:4px;'
-                f'font-size:11px;color:#94A3B8;">{name}</div>'
-                f'<div style="width:50%;display:flex;align-items:center;">'
-                f'<div style="width:2px;background:#CBD5E1;flex-shrink:0;align-self:stretch;"></div>'
-                f'<div style="width:{pct}%;background:{color};height:18px;border-radius:0 3px 3px 0;"></div>'
-                f'<div style="margin-left:6px;font-size:11px;font-weight:700;color:{text_color};white-space:nowrap;">{dollar_lbl}</div>'
-                f'</div>'
-            )
-        else:
-            bar_html = (
-                f'<div style="width:50%;display:flex;align-items:center;justify-content:flex-end;">'
-                f'<div style="margin-right:6px;font-size:11px;font-weight:700;color:{text_color};white-space:nowrap;">{dollar_lbl}</div>'
-                f'<div style="width:{pct}%;background:{color};height:18px;border-radius:3px 0 0 3px;"></div>'
-                f'<div style="width:2px;background:#CBD5E1;flex-shrink:0;align-self:stretch;"></div>'
-                f'</div>'
-                f'<div style="width:50%;padding-left:4px;font-size:11px;color:#94A3B8;">{name}</div>'
-            )
+        rect_x = center + 3 if is_pos else center - 3 - bar_px
+        svg = (
+            f'<svg width="{chart_w}" height="22" style="display:block;overflow:visible;">'
+            f'<line x1="{center}" y1="0" x2="{center}" y2="22" stroke="#CBD5E1" stroke-width="2"/>'
+            f'<rect x="{rect_x}" y="3" width="{bar_px}" height="16" fill="{color}" rx="2"/>'
+            f'</svg>'
+        )
 
         shap_rows_html += (
-            f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
-            f'{bar_html}'
-            f'</div>'
+            f'<tr>'
+            f'<td style="text-align:right;padding:2px 8px 2px 0;font-size:12px;'
+            f'color:#334155;white-space:nowrap;width:38%;">{name}</td>'
+            f'<td style="padding:2px 0;width:{chart_w}px;">{svg}</td>'
+            f'<td style="padding:2px 0 2px 8px;font-size:11px;font-weight:700;'
+            f'color:{text_color};white-space:nowrap;">{dollar_lbl}</td>'
+            f'</tr>'
         )
 
     shap_section = f"""
-    <div style="font-size:11px;color:#94A3B8;display:flex;justify-content:center;
-                gap:24px;margin-bottom:10px;">
-      <span><span style="display:inline-block;width:12px;height:12px;background:#3B82F6;
-            border-radius:2px;margin-right:5px;vertical-align:middle;"></span>Decreases forecast</span>
-      <span><span style="display:inline-block;width:12px;height:12px;background:#EF4444;
-            border-radius:2px;margin-right:5px;vertical-align:middle;"></span>Increases forecast</span>
+    <div style="text-align:center;margin-bottom:6px;font-size:11px;color:#94A3B8;">
+      &larr; Decreases forecast &nbsp;|&nbsp; Increases forecast &rarr;
     </div>
-    <div style="font-size:10px;color:#94A3B8;text-align:center;margin-bottom:8px;">
-      &larr; Decreases forecast &nbsp;&nbsp; | &nbsp;&nbsp; Increases forecast &rarr;
+    <div style="text-align:center;margin-bottom:12px;font-size:12px;color:#334155;">
+      <svg width="12" height="12" style="vertical-align:middle;margin-right:4px;">
+        <rect width="12" height="12" fill="#3B82F6" rx="2"/></svg>Decreases forecast
+      &nbsp;&nbsp;
+      <svg width="12" height="12" style="vertical-align:middle;margin-right:4px;">
+        <rect width="12" height="12" fill="#EF4444" rx="2"/></svg>Increases forecast
     </div>
-    {shap_rows_html}
+    <table style="border-collapse:collapse;margin:0 auto;">{shap_rows_html}</table>
     """
 
     # ── Inputs table ─────────────────────────────────────────────────────────
