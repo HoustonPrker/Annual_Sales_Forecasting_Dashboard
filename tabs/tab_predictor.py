@@ -231,31 +231,82 @@ def _render_technical_details(beds, adc, sqft):
 def _build_print_html(
     hospital_name: str, inputs: dict, result: dict, cfg: dict,
 ) -> str:
-    import base64, plotly.io as pio
-    from charts import shap_impact_chart
+    import math as _math
+    from charts import FEATURE_LABELS
 
     label   = hospital_name.strip() or "Unnamed Hospital"
     lo, mid, hi = result["conservative"], result["accurate"], result["optimistic"]
 
-    fig_shap = shap_impact_chart(cfg["features"], result["shap_values"],
-                                 cfg.get("shap_base_value", 0.0))
+    # ── Build HTML/CSS diverging SHAP chart ──────────────────────────────────
+    features    = cfg["features"]
+    shap_vals   = list(result["shap_values"])
+    shap_base   = cfg.get("shap_base_value", 0.0)
+    log_pred    = shap_base + sum(shap_vals)
+    monthly_pred = _math.exp(log_pred)
 
-    # SHAP chart: symmetric axis around 0 so diverging bars read correctly
-    shap_vals_flat = list(result["shap_values"])
-    max_abs = max(abs(v) for v in shap_vals_flat) if shap_vals_flat else 1.0
-    axis_range = [-max_abs * 1.35, max_abs * 1.35]
-    fig_shap.update_layout(
-        height=440,
-        margin=dict(t=16, b=16, l=210, r=130),
-        xaxis=dict(range=axis_range, zeroline=False, showticklabels=False,
-                   title=dict(text="← Decreases forecast  |  Increases forecast →",
-                              font=dict(size=12, color="#64748B"))),
-        legend=dict(orientation="h", y=-0.06, x=0.5, xanchor="center",
-                    font=dict(size=12), bgcolor="rgba(0,0,0,0)"),
-    )
+    def _dollar_impact(v):
+        d = monthly_pred * (1 - _math.exp(-v)) * 12
+        sign = "+" if d >= 0 else "-"
+        a = abs(d)
+        if a >= 1_000_000:
+            return f"{sign}${a/1_000_000:.1f}M/yr"
+        if a >= 1_000:
+            return f"{sign}${a/1_000:.0f}K/yr"
+        return f"{sign}${a:.0f}/yr"
 
-    shap_div = pio.to_html(fig_shap, full_html=False, include_plotlyjs=False)
+    rows = sorted(zip(features, shap_vals), key=lambda x: x[1])
+    max_abs = max(abs(v) for _, v in rows) if rows else 1.0
 
+    shap_rows_html = ""
+    for feat, val in rows:
+        name        = FEATURE_LABELS.get(feat, feat)
+        pct         = abs(val) / max_abs * 46   # max 46% of half-width
+        dollar_lbl  = _dollar_impact(val)
+        is_positive = val >= 0
+        color       = "#EF4444" if is_positive else "#3B82F6"
+        text_color  = "#B91C1C" if is_positive else "#1D4ED8"
+
+        if is_positive:
+            bar_html = (
+                f'<div style="width:50%;text-align:right;padding-right:4px;'
+                f'font-size:11px;color:#94A3B8;">{name}</div>'
+                f'<div style="width:50%;display:flex;align-items:center;">'
+                f'<div style="width:2px;background:#CBD5E1;flex-shrink:0;align-self:stretch;"></div>'
+                f'<div style="width:{pct}%;background:{color};height:18px;border-radius:0 3px 3px 0;"></div>'
+                f'<div style="margin-left:6px;font-size:11px;font-weight:700;color:{text_color};white-space:nowrap;">{dollar_lbl}</div>'
+                f'</div>'
+            )
+        else:
+            bar_html = (
+                f'<div style="width:50%;display:flex;align-items:center;justify-content:flex-end;">'
+                f'<div style="margin-right:6px;font-size:11px;font-weight:700;color:{text_color};white-space:nowrap;">{dollar_lbl}</div>'
+                f'<div style="width:{pct}%;background:{color};height:18px;border-radius:3px 0 0 3px;"></div>'
+                f'<div style="width:2px;background:#CBD5E1;flex-shrink:0;align-self:stretch;"></div>'
+                f'</div>'
+                f'<div style="width:50%;padding-left:4px;font-size:11px;color:#94A3B8;">{name}</div>'
+            )
+
+        shap_rows_html += (
+            f'<div style="display:flex;align-items:center;margin-bottom:5px;">'
+            f'{bar_html}'
+            f'</div>'
+        )
+
+    shap_section = f"""
+    <div style="font-size:11px;color:#94A3B8;display:flex;justify-content:center;
+                gap:24px;margin-bottom:10px;">
+      <span><span style="display:inline-block;width:12px;height:12px;background:#3B82F6;
+            border-radius:2px;margin-right:5px;vertical-align:middle;"></span>Decreases forecast</span>
+      <span><span style="display:inline-block;width:12px;height:12px;background:#EF4444;
+            border-radius:2px;margin-right:5px;vertical-align:middle;"></span>Increases forecast</span>
+    </div>
+    <div style="font-size:10px;color:#94A3B8;text-align:center;margin-bottom:8px;">
+      &larr; Decreases forecast &nbsp;&nbsp; | &nbsp;&nbsp; Increases forecast &rarr;
+    </div>
+    {shap_rows_html}
+    """
+
+    # ── Inputs table ─────────────────────────────────────────────────────────
     beds      = inputs.get("staffed_beds", "—")
     adc       = inputs.get("adc", "—")
     sqft      = inputs.get("giftshop_sqft", "—")
@@ -271,7 +322,6 @@ def _build_print_html(
         except Exception:
             return str(v)
 
-    # Table rows with a visible border between each row for easy reading
     rows_html = f"""
       <tr class="trow">
         <td class="lbl">Hospital Type</td><td class="val">{hosp_type}</td>
@@ -296,26 +346,21 @@ def _build_print_html(
 <head>
 <meta charset="utf-8">
 <title>{label} — Revenue Forecast</title>
-<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <style>
   * {{ box-sizing:border-box; margin:0; padding:0; }}
   body {{ font-family:'Inter',sans-serif; color:#1E293B; padding:32px 40px; background:#fff; }}
   h1 {{ font-size:28px; font-weight:800; color:#1E3A5F; margin-bottom:3px; }}
   .subtitle {{ font-size:13px; color:#64748B; margin-bottom:18px; }}
-
-  /* Inputs table with row dividers */
   table.inputs {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px;
                   border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; }}
   tr.trow {{ border-bottom:1px solid #E2E8F0; }}
   tr.trow:last-child {{ border-bottom:none; }}
   tr.trow:nth-child(odd) {{ background:#F8FAFC; }}
   table.inputs td {{ padding:8px 14px; }}
-  td.lbl {{ font-weight:700; color:#475569; padding-left:20px; width:22%;
-            border-right:1px solid #E2E8F0; }}
+  td.lbl {{ font-weight:700; color:#475569; padding-left:20px; width:22%; border-right:1px solid #E2E8F0; }}
   td.val {{ color:#1E293B; width:28%; border-right:1px solid #E2E8F0; }}
   td.val:last-child {{ border-right:none; }}
-
   .divider {{ height:1px; background:#E2E8F0; margin:18px 0; }}
   .section-title {{ font-size:15px; font-weight:700; color:#1E3A5F; margin:18px 0 10px; }}
   .cards {{ display:flex; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; margin-bottom:16px; }}
@@ -324,7 +369,8 @@ def _build_print_html(
   .clbl {{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; margin-bottom:7px; }}
   .cval {{ font-weight:800; line-height:1; }}
   .csub {{ font-size:11px; color:#94A3B8; margin-top:5px; }}
-  @media print {{ @page {{ margin:0.5in; size:portrait; }} body {{ padding:0; }} }}
+  @media print {{ -webkit-print-color-adjust:exact; print-color-adjust:exact;
+                  @page {{ margin:0.5in; size:portrait; }} body {{ padding:0; }} }}
 </style>
 </head>
 <body>
@@ -354,11 +400,11 @@ def _build_print_html(
 </div>
 
 <div class="section-title">What's Driving This Forecast?</div>
-{shap_div}
+{shap_section}
 
 <script>
   window.onload = function() {{
-    setTimeout(function() {{ window.print(); }}, 800);
+    setTimeout(function() {{ window.print(); }}, 600);
   }};
 </script>
 </body>
