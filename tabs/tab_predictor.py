@@ -309,11 +309,8 @@ def _build_print_html(
     )
 
     shap_section = f"""
-    <div style="text-align:center;margin-bottom:8px;font-size:11px;color:#94A3B8;">
-      &larr; Decreases forecast &nbsp;|&nbsp; Increases forecast &rarr;
-    </div>
-    {legend_html}
     <table style="border-collapse:collapse;width:100%;">{shap_rows_html}</table>
+    {legend_html}
     """
 
     # ── Inputs table ─────────────────────────────────────────────────────────
