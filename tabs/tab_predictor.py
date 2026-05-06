@@ -392,10 +392,16 @@ def _render_actions(
             f"""<script>
             (function(){{
                 /* nonce:{nonce} */
-                var s = window.parent.document.createElement('script');
-                s.textContent = 'window.print();';
-                window.parent.document.head.appendChild(s);
-                s.parentNode.removeChild(s);
+                var win = window.parent;
+                // Scroll to bottom so Streamlit lazy-renders all off-screen content,
+                // then scroll back to top, then wait for charts to finish rendering.
+                win.scrollTo(0, win.document.body.scrollHeight);
+                setTimeout(function() {{
+                    win.scrollTo(0, 0);
+                    setTimeout(function() {{
+                        win.print();
+                    }}, 1200);
+                }}, 600);
             }})();
             </script>""",
             unsafe_allow_javascript=True,
