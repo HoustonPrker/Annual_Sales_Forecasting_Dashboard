@@ -341,45 +341,46 @@ def _build_print_html(
       </tr>
     """
 
-    html = f"""<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>{label} — Revenue Forecast</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
-<style>
-  * {{ box-sizing:border-box; margin:0; padding:0; }}
-  body {{ font-family:'Inter',sans-serif; color:#1E293B; padding:32px 40px; background:#fff; }}
-  h1 {{ font-size:28px; font-weight:800; color:#1E3A5F; margin-bottom:3px; }}
-  .subtitle {{ font-size:13px; color:#64748B; margin-bottom:18px; }}
-  table.inputs {{ width:100%; border-collapse:collapse; font-size:13px; margin-bottom:20px;
-                  border:1px solid #E2E8F0; border-radius:8px; overflow:hidden; }}
-  tr.trow {{ border-bottom:1px solid #E2E8F0; }}
-  tr.trow:last-child {{ border-bottom:none; }}
-  tr.trow:nth-child(odd) {{ background:#F8FAFC; }}
-  table.inputs td {{ padding:8px 14px; }}
-  td.lbl {{ font-weight:700; color:#475569; padding-left:20px; width:22%; border-right:1px solid #E2E8F0; }}
-  td.val {{ color:#1E293B; width:28%; border-right:1px solid #E2E8F0; }}
-  td.val:last-child {{ border-right:none; }}
-  .divider {{ height:1px; background:#E2E8F0; margin:18px 0; }}
-  .section-title {{ font-size:15px; font-weight:700; color:#1E3A5F; margin:18px 0 10px; }}
-  .cards {{ display:flex; border:1px solid #E2E8F0; border-radius:12px; overflow:hidden; margin-bottom:16px; }}
-  .card {{ flex:1; padding:18px; text-align:center; }}
-  .card.mid {{ flex:1.35; border-left:1px solid #E2E8F0; border-right:1px solid #E2E8F0; background:#F8FAFF; }}
-  .clbl {{ font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.09em; margin-bottom:7px; }}
-  .cval {{ font-weight:800; line-height:1; }}
-  .csub {{ font-size:11px; color:#94A3B8; margin-top:5px; }}
-  @media print {{ -webkit-print-color-adjust:exact; print-color-adjust:exact;
-                  @page {{ margin:0.5in; size:portrait; }} body {{ padding:0; }} }}
-</style>
-</head>
-<body>
+    css = """
+      #ck-print { font-family:'Inter',sans-serif; color:#1E293B;
+                  padding:32px 40px; background:#fff; box-sizing:border-box; }
+      #ck-print * { box-sizing:border-box; }
+      #ck-print h1 { font-size:28px; font-weight:800; color:#1E3A5F; margin-bottom:3px; }
+      #ck-print .subtitle { font-size:13px; color:#64748B; margin-bottom:18px; }
+      #ck-print table.inputs { width:100%; border-collapse:collapse; font-size:13px;
+        margin-bottom:20px; border:1px solid #E2E8F0; }
+      #ck-print tr.trow { border-bottom:1px solid #E2E8F0; }
+      #ck-print tr.trow:last-child { border-bottom:none; }
+      #ck-print tr.trow:nth-child(odd) { background:#F8FAFC; }
+      #ck-print table.inputs td { padding:8px 14px; }
+      #ck-print td.lbl { font-weight:700; color:#475569; padding-left:20px; width:22%;
+        border-right:1px solid #E2E8F0; }
+      #ck-print td.val { color:#1E293B; width:28%; border-right:1px solid #E2E8F0; }
+      #ck-print td.val:last-child { border-right:none; }
+      #ck-print .divider { height:1px; background:#E2E8F0; margin:18px 0; }
+      #ck-print .section-title { font-size:15px; font-weight:700; color:#1E3A5F; margin:18px 0 10px; }
+      #ck-print .cards { display:flex; border:1px solid #E2E8F0; border-radius:12px;
+        overflow:hidden; margin-bottom:16px; }
+      #ck-print .card { flex:1; padding:18px; text-align:center; }
+      #ck-print .card.mid { flex:1.35; border-left:1px solid #E2E8F0;
+        border-right:1px solid #E2E8F0; background:#F8FAFF; }
+      #ck-print .clbl { font-size:10px; font-weight:700; text-transform:uppercase;
+        letter-spacing:.09em; margin-bottom:7px; }
+      #ck-print .cval { font-weight:800; line-height:1; }
+      #ck-print .csub { font-size:11px; color:#94A3B8; margin-top:5px; }
+      @media print {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        @page { margin:0.5in; }
+        body > *:not(#ck-print) { display:none !important; }
+        #ck-print { display:block !important; padding:0; }
+      }
+    """
+
+    body = f"""
 <h1>{label}</h1>
 <div class="subtitle">Gift Shop Revenue Forecast &mdash; Cloverkey</div>
-
 <table class="inputs">{rows_html}</table>
 <div class="divider"></div>
-
 <div class="section-title">First-Year Revenue Projections</div>
 <div class="cards">
   <div class="card">
@@ -398,19 +399,11 @@ def _build_print_html(
     <div class="csub">Upper bound</div>
   </div>
 </div>
-
 <div class="section-title">What's Driving This Forecast?</div>
 {shap_section}
+"""
 
-<script>
-  window.onload = function() {{
-    setTimeout(function() {{ window.print(); }}, 600);
-  }};
-</script>
-</body>
-</html>"""
-
-    return html
+    return css, body
 
 
 def _render_actions(
@@ -450,23 +443,56 @@ def _render_actions(
 
     with col_print:
         if st.button("Print", width="stretch",
-                     help="Opens a clean printable report in a new tab."):
+                     help="Opens the browser print dialog for this forecast."):
             st.session_state["trigger_print"] = True
 
     if st.session_state.pop("trigger_print", False):
         import base64, time
-        html  = _build_print_html(hospital_name, inputs, result, cfg)
-        b64   = base64.b64encode(html.encode("utf-8")).decode("ascii")
-        nonce = int(time.time() * 1000)
+        css, body = _build_print_html(hospital_name, inputs, result, cfg)
+        css_b64  = base64.b64encode(css.encode("utf-8")).decode("ascii")
+        body_b64 = base64.b64encode(body.encode("utf-8")).decode("ascii")
+        nonce    = int(time.time() * 1000)
         st.html(
             f"""<script>
             (function(){{
                 /* nonce:{nonce} */
-                var b64 = "{b64}";
-                var bytes = Uint8Array.from(atob(b64), function(c){{ return c.charCodeAt(0); }});
-                var blob  = new Blob([bytes], {{type: "text/html"}});
-                var url   = URL.createObjectURL(blob);
-                window.parent.open(url, "_blank");
+                var doc  = window.parent.document;
+                var dec  = function(b64) {{
+                    return decodeURIComponent(
+                        atob(b64).split('').map(function(c) {{
+                            return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+                        }}).join('')
+                    );
+                }};
+
+                // Remove any leftover overlay from a previous print
+                var old = doc.getElementById('ck-print');
+                if (old) old.remove();
+                var oldStyle = doc.getElementById('ck-print-style');
+                if (oldStyle) oldStyle.remove();
+
+                // Inject styles
+                var styleEl = doc.createElement('style');
+                styleEl.id  = 'ck-print-style';
+                styleEl.textContent = dec('{css_b64}');
+                doc.head.appendChild(styleEl);
+
+                // Inject content div (hidden on screen, shown only during print)
+                var div = doc.createElement('div');
+                div.id  = 'ck-print';
+                div.style.display = 'none';
+                div.innerHTML = dec('{body_b64}');
+                doc.body.appendChild(div);
+
+                // Print, then clean up
+                setTimeout(function() {{
+                    window.parent.print();
+                    window.parent.addEventListener('afterprint', function cleanup() {{
+                        div.remove();
+                        styleEl.remove();
+                        window.parent.removeEventListener('afterprint', cleanup);
+                    }}, {{ once: true }});
+                }}, 200);
             }})();
             </script>""",
             unsafe_allow_javascript=True,
