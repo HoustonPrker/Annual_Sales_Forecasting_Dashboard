@@ -3,6 +3,7 @@ import streamlit as st
 from charts import FEATURE_LABELS, revenue_chart, shap_impact_chart
 from model import predict_12_months, safe_log
 from saved_forecasts import save_forecast, single_forecast_excel_bytes
+from tier_correction import apply_tier_correction
 
 _HELP = {
     "beds":        "Total staffed beds from AHD or CMS data.",
@@ -81,6 +82,12 @@ def render(artifacts: tuple) -> None:
             FEATURE_LABELS.get(f, f): float(v)
             for f, v in zip(cfg["features"], result["shap_values"])
         }
+        correction = apply_tier_correction(
+            result["accurate"],
+            result["conservative"],
+            result["optimistic"],
+        )
+        _append_ledger(hospital_name, inputs, result, correction)
         st.session_state["last_forecast"] = {
             "hospital_name": hospital_name,
             "inputs":        inputs,
@@ -89,6 +96,7 @@ def render(artifacts: tuple) -> None:
             "staffed_beds":  staffed_beds,
             "shap_drivers":  shap_drivers,
             "shap_base":     float(cfg.get("shap_base_value", 0.0)),
+            "correction":    correction,
         }
         st.session_state.pop("forecast_saved", None)
 
@@ -102,6 +110,7 @@ def render(artifacts: tuple) -> None:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     _render_hero(result)
+    _render_correction(fc.get("correction", {}))
     _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
     _render_technical_details(
@@ -110,6 +119,83 @@ def render(artifacts: tuple) -> None:
     )
     _render_actions(hospital_name, inputs, result,
                     fc.get("shap_drivers", {}), fc.get("shap_base", 0.0), cfg)
+
+
+# ── Tier correction display ───────────────────────────────────────────────────
+
+def _render_correction(correction: dict) -> None:
+    if not correction:
+        return
+    applied = correction.get("applied", False)
+    tier    = correction.get("tier", "")
+
+    if not applied:
+        st.info(
+            f"**Near tier boundary ({tier}) — no calibration applied.** "
+            "Tier assignment is unstable at this revenue level; showing raw model output only."
+        )
+        return
+
+    raw       = correction["raw"]
+    corrected = correction["corrected"]
+    lo        = correction["lower"]
+    hi        = correction["upper"]
+    factor    = correction["factor"]
+    delta_pct = (corrected - raw) / raw * 100
+
+    col_raw, col_adj = st.columns(2, gap="large")
+    with col_raw:
+        st.metric(
+            "V1 Model (Raw)",
+            f"${raw:,.0f}",
+            help="Direct ensemble output before calibration.",
+        )
+    with col_adj:
+        st.metric(
+            f"Calibrated ({tier} tier)",
+            f"${corrected:,.0f}",
+            delta=f"{delta_pct:+.1f}%",
+            help=f"Multiplied by {factor:.4f}. CI: ${lo:,.0f} – ${hi:,.0f}",
+        )
+    st.caption(
+        "Adjusted for systematic tier bias observed in 42-store production cohort. "
+        "Validated leave-one-out, May 2026."
+    )
+    _divider()
+
+
+# ── Prediction ledger ─────────────────────────────────────────────────────────
+
+def _append_ledger(
+    hospital_name: str, inputs: dict, result: dict, correction: dict,
+) -> None:
+    import csv, json, os
+    from datetime import datetime
+
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prediction_ledger.csv")
+    fieldnames = [
+        "timestamp", "store_name", "raw_prediction", "corrected_prediction",
+        "tier", "correction_applied", "correction_factor",
+        "lower", "upper", "features_json", "actual_revenue",
+    ]
+    write_header = not os.path.exists(path)
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow({
+            "timestamp":           datetime.utcnow().isoformat(),
+            "store_name":          hospital_name or "",
+            "raw_prediction":      correction.get("raw", result["accurate"]),
+            "corrected_prediction": correction.get("corrected", result["accurate"]),
+            "tier":                correction.get("tier", ""),
+            "correction_applied":  correction.get("applied", False),
+            "correction_factor":   correction.get("factor", 1.0),
+            "lower":               correction.get("lower", result["conservative"]),
+            "upper":               correction.get("upper", result["optimistic"]),
+            "features_json":       json.dumps(inputs),
+            "actual_revenue":      "",
+        })
 
 
 # ── Section helpers ───────────────────────────────────────────────────────────
