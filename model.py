@@ -63,18 +63,16 @@ def blend_predict(lgbm, ridge, enet, weights: dict, row_df: pd.DataFrame) -> flo
 def build_feature_row(
     cfg: dict,
     staffed_beds: float, adc: float,
-    affiliation: str, dist_elevator: float, dist_cafeteria: float,
+    dist_elevator: float, dist_cafeteria: float,
     months_since_open: int, calendar_month: int,
     giftshop_sqft: float, occupancy_rate: float,
     hospital_type: str, payroll_ded: int,
+    affiliation_enc: float,
 ) -> pd.DataFrame:
     sine, cosine = month_trig(calendar_month)
     row = {
         "Months_Since_Open":          months_since_open,
-        "Affiliation_enc":            cfg["affiliation_lookup"].get(
-                                          affiliation,
-                                          cfg["affiliation_lookup"]["Other / New System"]
-                                      ),
+        "Affiliation_enc":            affiliation_enc,
         "log_Staffed_Beds":           safe_log(staffed_beds),
         "Time to Main Elevator Bank": dist_elevator,
         "log_ADC":                    safe_log(adc),
@@ -101,10 +99,11 @@ def predict_12_months(artifacts: tuple, inputs: dict) -> dict:
         row_df = build_feature_row(
             cfg,
             inputs["staffed_beds"], inputs["adc"],
-            inputs["affiliation"], inputs["dist_elevator"], inputs["dist_cafeteria"],
+            inputs["dist_elevator"], inputs["dist_cafeteria"],
             m, m,
             inputs["giftshop_sqft"], occupancy_rate,
             inputs["hospital_type"], inputs["payroll_ded"],
+            affiliation_enc=inputs["affiliation_enc"],
         )
         feature_rows.append(row_df)
         log_rev = blend_predict(lgbm, ridge, enet, cfg["blend_weights"], row_df)

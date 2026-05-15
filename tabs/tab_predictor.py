@@ -1,5 +1,6 @@
 import streamlit as st
 
+from affiliation_override import assign_affiliation, load_flag_classifier
 from charts import FEATURE_LABELS, revenue_chart, shap_impact_chart
 from model import predict_12_months, safe_log
 from saved_forecasts import save_forecast, single_forecast_excel_bytes
@@ -12,15 +13,30 @@ _HELP = {
     "payroll_ded": "Whether the hospital offers payroll deduction for gift shop purchases.",
     "elevator":    "Walking time in seconds from the gift shop entrance to the main elevator bank.",
     "cafeteria":   "Walking time in seconds from the gift shop entrance to the main cafeteria.",
+    "fte":         "Total hospital FTE count. Available from AHD or CMS data.",
 }
 
 _HOSP_TYPES = ["Community", "Specialty", "Academic"]
+
+# Load flag classifier once at startup. Falls back to None if the file is not
+# yet present; predictions will use the Default tier and show a warning.
+try:
+    _FLAG_CLF = load_flag_classifier()
+except FileNotFoundError:
+    _FLAG_CLF = None
 
 
 def render(artifacts: tuple) -> None:
     cfg = artifacts[0]
 
     st.markdown("## Revenue Forecast")
+
+    if _FLAG_CLF is None:
+        st.warning(
+            "**Flag classifier not found** (`model_files/flag_classifier.joblib`). "
+            "Affiliation tier override is disabled — all predictions will use the "
+            "global-median affiliation default until the classifier is added."
+        )
 
     with st.form("forecast_inputs"):
         hospital_name = st.text_input(
@@ -41,8 +57,13 @@ def render(artifacts: tuple) -> None:
             hospital_type = st.selectbox("Hospital Type", options=_HOSP_TYPES, index=0)
             st.caption(_HELP["hosp_type"])
 
-        payroll_ded_bool = st.toggle("Payroll Deduction Available", value=True)
-        st.caption(_HELP["payroll_ded"])
+        c_fte, c_payroll = st.columns([1, 1], gap="large")
+        with c_fte:
+            fte = st.number_input("FTE (Full-Time Employees)", min_value=0, value=0, step=1)
+            st.caption(_HELP["fte"])
+        with c_payroll:
+            payroll_ded_bool = st.toggle("Payroll Deduction Available", value=True)
+            st.caption(_HELP["payroll_ded"])
 
         st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
         _section("Gift Shop Details")
@@ -61,13 +82,40 @@ def render(artifacts: tuple) -> None:
         submitted = st.form_submit_button("Generate Forecast", type="primary", width='stretch')
 
     if submitted:
-        payroll_ded = 1 if payroll_ded_bool else 0
+        if fte <= 0:
+            st.error("FTE is required. Enter the hospital's total full-time employee count.")
+            return
+
+        payroll_ded   = 1 if payroll_ded_bool else 0
+        occupancy_rate = adc / staffed_beds
+
+        # Select affiliation tier before running the model
+        if _FLAG_CLF is not None:
+            override = assign_affiliation(
+                flag_classifier=_FLAG_CLF,
+                giftshop_sqft=giftshop_sqft,
+                occupancy_rate=occupancy_rate,
+                fte=fte,
+            )
+        else:
+            from affiliation_override import AFFILIATION_DEFAULTS
+            override = {
+                "affiliation_enc": AFFILIATION_DEFAULTS["Default"],
+                "flag_predicted":  None,
+                "flag_used":       None,
+                "tier_label":      "Default",
+                "escalated":       False,
+            }
+
         inputs = dict(
             staffed_beds=staffed_beds, adc=adc,
-            giftshop_sqft=giftshop_sqft, affiliation="Other / New System",
+            giftshop_sqft=giftshop_sqft,
+            affiliation_enc=override["affiliation_enc"],
             hospital_type=hospital_type, payroll_ded=payroll_ded,
             dist_elevator=dist_elevator, dist_cafeteria=dist_cafeteria,
+            fte=fte,
         )
+
         with st.spinner("Calculating forecast…"):
             try:
                 result = predict_12_months(artifacts, inputs)
@@ -81,6 +129,7 @@ def render(artifacts: tuple) -> None:
             FEATURE_LABELS.get(f, f): float(v)
             for f, v in zip(cfg["features"], result["shap_values"])
         }
+        _append_ledger(hospital_name, inputs, result, override)
         st.session_state["last_forecast"] = {
             "hospital_name": hospital_name,
             "inputs":        inputs,
@@ -89,6 +138,7 @@ def render(artifacts: tuple) -> None:
             "staffed_beds":  staffed_beds,
             "shap_drivers":  shap_drivers,
             "shap_base":     float(cfg.get("shap_base_value", 0.0)),
+            "override":      override,
         }
         st.session_state.pop("forecast_saved", None)
 
@@ -102,6 +152,7 @@ def render(artifacts: tuple) -> None:
 
     st.markdown("<div style='height:12px'></div>", unsafe_allow_html=True)
     _render_hero(result)
+    _render_override_info(fc.get("override", {}))
     _render_monthly_chart(result, cfg["residual_shifts"])
     _render_impact(result, cfg)
     _render_technical_details(
@@ -110,6 +161,69 @@ def render(artifacts: tuple) -> None:
     )
     _render_actions(hospital_name, inputs, result,
                     fc.get("shap_drivers", {}), fc.get("shap_base", 0.0), cfg)
+
+
+# ── Affiliation override info ─────────────────────────────────────────────────
+
+def _render_override_info(override: dict) -> None:
+    if not override:
+        return
+    tier = override.get("tier_label", "Default")
+    flag = override.get("flag_predicted")
+    if tier == "Default":
+        st.caption(
+            f"Tier: {tier}"
+            + (f" (flag {flag})" if flag is not None else "")
+            + ". Standard affiliation default applied."
+        )
+    else:
+        escalation_note = " — FTE-escalated" if override.get("escalated") else ""
+        st.caption(
+            f"Tier: {tier} (flag {flag}{escalation_note}). "
+            f"Tier-appropriate affiliation default applied: "
+            f"{override.get('affiliation_enc', 0):,.0f}"
+        )
+
+
+# ── Prediction ledger ─────────────────────────────────────────────────────────
+
+def _append_ledger(
+    hospital_name: str, inputs: dict, result: dict, override: dict,
+) -> None:
+    import csv, json, os
+    from datetime import datetime
+
+    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prediction_ledger.csv")
+    fieldnames = [
+        "timestamp", "store_name",
+        "giftshop_sqft", "occupancy_rate", "fte",
+        "flag_predicted", "flag_used", "escalated", "tier_label",
+        "affiliation_enc_used",
+        "prediction", "lower_bound", "upper_bound",
+        "actual_revenue",
+    ]
+    write_header = not os.path.exists(path)
+    occ = inputs["adc"] / inputs["staffed_beds"]
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        if write_header:
+            writer.writeheader()
+        writer.writerow({
+            "timestamp":          datetime.utcnow().isoformat(),
+            "store_name":         hospital_name or "",
+            "giftshop_sqft":      inputs.get("giftshop_sqft", ""),
+            "occupancy_rate":     f"{occ:.4f}",
+            "fte":                inputs.get("fte", ""),
+            "flag_predicted":     override.get("flag_predicted", ""),
+            "flag_used":          override.get("flag_used", ""),
+            "escalated":          override.get("escalated", ""),
+            "tier_label":         override.get("tier_label", ""),
+            "affiliation_enc_used": override.get("affiliation_enc", ""),
+            "prediction":         result["accurate"],
+            "lower_bound":        result["conservative"],
+            "upper_bound":        result["optimistic"],
+            "actual_revenue":     "",
+        })
 
 
 # ── Section helpers ───────────────────────────────────────────────────────────
@@ -170,7 +284,6 @@ def _card_html(lo: float, mid: float, hi: float) -> str:
     """
 
 
-
 def _render_hero(result: dict) -> None:
     lo, mid, hi = result["conservative"], result["accurate"], result["optimistic"]
     st.markdown(
@@ -217,7 +330,6 @@ def _render_impact(result: dict, cfg: dict) -> None:
     _divider()
 
 
-
 def _render_technical_details(beds, adc, sqft):
     with st.expander("Technical Details", expanded=False):
         st.caption("Internal model inputs — for data team reference only.")
@@ -229,8 +341,8 @@ def _render_technical_details(beds, adc, sqft):
 
 
 def _build_print_html(
-    hospital_name: str, inputs: dict, result: dict, cfg: dict,
-) -> str:
+    hospital_name: str, inputs: dict, result: dict, cfg: dict, override: dict,
+) -> tuple:
     import math as _math
     from charts import FEATURE_LABELS
 
@@ -257,10 +369,9 @@ def _build_print_html(
     rows = sorted(zip(features, shap_vals), key=lambda x: x[1])
     max_abs = max(abs(v) for _, v in rows) if rows else 1.0
 
-    # SVG-based bars — SVG fill always prints; background-color is stripped by browsers
-    chart_w  = 400   # px — wider to fill the page
-    row_h    = 30    # px height per row
-    bar_h    = 20    # px height of each bar
+    chart_w  = 400
+    row_h    = 30
+    bar_h    = 20
     bar_top  = (row_h - bar_h) // 2
     center   = chart_w // 2
 
@@ -272,8 +383,7 @@ def _build_print_html(
         is_pos     = val >= 0
         color      = "#EF4444" if is_pos else "#3B82F6"
         text_color = "#B91C1C" if is_pos else "#1D4ED8"
-
-        rect_x = center + 3 if is_pos else center - 3 - bar_px
+        rect_x     = center + 3 if is_pos else center - 3 - bar_px
         svg = (
             f'<svg viewBox="0 0 {chart_w} {row_h}" width="100%" height="{row_h}" '
             f'preserveAspectRatio="none" style="display:block;overflow:visible;">'
@@ -281,7 +391,6 @@ def _build_print_html(
             f'<rect x="{rect_x}" y="{bar_top}" width="{bar_px}" height="{bar_h}" fill="{color}" rx="3"/>'
             f'</svg>'
         )
-
         shap_rows_html += (
             f'<tr>'
             f'<td style="text-align:right;padding:0 10px 0 0;font-size:12px;'
@@ -292,7 +401,6 @@ def _build_print_html(
             f'</tr>'
         )
 
-    # Legend: use a table row so swatch and label stay on the same line reliably
     legend_html = (
         f'<table style="border-collapse:collapse;margin:0 auto 10px;">'
         f'<tr>'
@@ -315,13 +423,14 @@ def _build_print_html(
 
     # ── Inputs table ─────────────────────────────────────────────────────────
     beds      = inputs.get("staffed_beds", "—")
-    adc       = inputs.get("adc", "—")
+    adc_val   = inputs.get("adc", "—")
     sqft      = inputs.get("giftshop_sqft", "—")
     elevator  = inputs.get("dist_elevator", "—")
     cafeteria = inputs.get("dist_cafeteria", "—")
     hosp_type = inputs.get("hospital_type", "—")
-    affil     = inputs.get("affiliation", "—")
+    fte_val   = inputs.get("fte", "—")
     payroll   = "Yes" if inputs.get("payroll_ded") else "No"
+    tier_lbl  = override.get("tier_label", "Default") if override else "Default"
 
     def _fmt(v):
         try:
@@ -332,19 +441,23 @@ def _build_print_html(
     rows_html = f"""
       <tr class="trow">
         <td class="lbl">Hospital Type</td><td class="val">{hosp_type}</td>
-        <td class="lbl">Health System</td><td class="val">{affil}</td>
+        <td class="lbl">Tier (auto)</td><td class="val">{tier_lbl}</td>
       </tr>
       <tr class="trow">
         <td class="lbl">Staffed Beds</td><td class="val">{_fmt(beds)}</td>
-        <td class="lbl">Avg Daily Census (ADC)</td><td class="val">{_fmt(adc)}</td>
+        <td class="lbl">Avg Daily Census (ADC)</td><td class="val">{_fmt(adc_val)}</td>
       </tr>
       <tr class="trow">
         <td class="lbl">Gift Shop Sq Ft</td><td class="val">{_fmt(sqft)}</td>
-        <td class="lbl">Payroll Deduction</td><td class="val">{payroll}</td>
+        <td class="lbl">FTE</td><td class="val">{_fmt(fte_val)}</td>
       </tr>
       <tr class="trow">
+        <td class="lbl">Payroll Deduction</td><td class="val">{payroll}</td>
         <td class="lbl">Distance to Elevator</td><td class="val">{elevator}s walk</td>
+      </tr>
+      <tr class="trow">
         <td class="lbl">Distance to Cafeteria</td><td class="val">{cafeteria}s walk</td>
+        <td class="lbl"></td><td class="val"></td>
       </tr>
     """
 
@@ -454,7 +567,8 @@ def _render_actions(
 
     if st.session_state.pop("trigger_print", False):
         import base64, time
-        css, body = _build_print_html(hospital_name, inputs, result, cfg)
+        override = st.session_state.get("last_forecast", {}).get("override", {})
+        css, body = _build_print_html(hospital_name, inputs, result, cfg, override)
         css_b64  = base64.b64encode(css.encode("utf-8")).decode("ascii")
         body_b64 = base64.b64encode(body.encode("utf-8")).decode("ascii")
         nonce    = int(time.time() * 1000)
@@ -471,26 +585,22 @@ def _render_actions(
                     );
                 }};
 
-                // Remove any leftover overlay from a previous print
                 var old = doc.getElementById('ck-print');
                 if (old) old.remove();
                 var oldStyle = doc.getElementById('ck-print-style');
                 if (oldStyle) oldStyle.remove();
 
-                // Inject styles
                 var styleEl = doc.createElement('style');
                 styleEl.id  = 'ck-print-style';
                 styleEl.textContent = dec('{css_b64}');
                 doc.head.appendChild(styleEl);
 
-                // Inject content div (hidden on screen, shown only during print)
                 var div = doc.createElement('div');
                 div.id  = 'ck-print';
                 div.style.display = 'none';
                 div.innerHTML = dec('{body_b64}');
                 doc.body.appendChild(div);
 
-                // Print, then clean up
                 setTimeout(function() {{
                     window.parent.print();
                     window.parent.addEventListener('afterprint', function cleanup() {{
