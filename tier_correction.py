@@ -5,6 +5,19 @@ Correction factors are derived from leave-one-out cross-validation on a
 """
 import os
 
+
+def _correction_enabled() -> bool:
+    """Read kill-switch from st.secrets (Streamlit Cloud) with os.environ fallback (local dev)."""
+    try:
+        import streamlit as st
+        val = st.secrets.get("TIER_CORRECTION_ENABLED", None)
+        if val is not None:
+            return str(val).lower() != "false"
+    except Exception:
+        pass
+    return os.environ.get("TIER_CORRECTION_ENABLED", "true").lower() != "false"
+
+
 # Tier boundaries
 _SMALL_MAX  = 300_000
 _LARGE_MIN  = 450_000
@@ -50,7 +63,7 @@ def apply_tier_correction(
       3. Medium tier: no correction (factor = 1.0).
       4. Impact cap: correction cannot shift prediction by more than 40%.
     """
-    enabled = os.environ.get("TIER_CORRECTION_ENABLED", "true").lower() != "false"
+    enabled = _correction_enabled()
 
     tier   = _tier(raw)
     factor = _FACTORS[tier]
